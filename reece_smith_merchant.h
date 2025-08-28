@@ -1,0 +1,19 @@
+typedef enum MyEnum {
+  MyEnum_ThingA,
+  MyEnum_ThingB,
+} MyEnum;
+
+typedef struct Vector2 {
+  float x;
+  float y;
+} Vector2;
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
+float vector2_magnitude(const struct Vector2 *vector, enum MyEnum kind);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
