@@ -8,12 +8,13 @@ name         = "reece_smith_merchant"
 crate-type   = ["rlib", "cdylib"]
 
 [dependencies]
-zcash_client_sqlite = { version = "0.17.2", features = ["orchard"] }
-tempfile = "3.21.0"
-zcash_client_backend = "0.19.1"
-zcash_protocol = "0.5.4"
 rand_core = "0.6.4"
 secrecy = "0.8.0"
+tempfile = "3.21.0"
+zcash_client_backend = "0.19.1"
+zcash_client_sqlite = { version = "0.17.2", features = ["orchard"] }
+zcash_protocol = "0.5.4"
+zip32 = "0.2.0"
 
 [build-dependencies]
 cbindgen = "0.29.0"

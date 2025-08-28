@@ -1361,6 +1361,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_client_sqlite",
  "zcash_protocol",
+ "zip32",
 ]
 
 [[package]]
