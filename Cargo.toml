@@ -1,0 +1,10 @@
+[package]
+name = "reece_smith_merchant"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name         = "reece_smith_merchant"
+crate-type   = ["rlib", "cdylib"]
+
+[dependencies]
