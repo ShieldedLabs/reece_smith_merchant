@@ -4,16 +4,21 @@ pub fn do_all_the_things() {
 
     let temp_dir = tempfile::tempdir().unwrap();
 
-    let mut wdb = zcash_client_sqlite::WalletDb::for_path(temp_dir.path().join("wallet.db"), zcash_protocol::consensus::Network::MainNetwork, zcash_client_sqlite::util::SystemClock, rand_core::OsRng).unwrap();
+    // let mut wdb = zcash_client_sqlite::WalletDb::for_path(temp_dir.path().join("wallet.db"), zcash_protocol::consensus::Network::MainNetwork, zcash_client_sqlite::util::SystemClock, rand_core::OsRng).unwrap();
     let cdb = zcash_client_sqlite::BlockDb::for_path(temp_dir.path().join("cache.db")).unwrap();
 
     // First run only: create/upgrade the schemas.
     zcash_client_sqlite::chain::init::init_cache_database(&cdb).unwrap();
-    zcash_client_sqlite::wallet::init::init_wallet_db(&mut wdb, None).unwrap();
+    // zcash_client_sqlite::wallet::init::init_wallet_db(&mut wdb, None).unwrap();
 
-    // --- 2) Create an account & get a Unified Address (only once) ---
-    // (Use your own securely-generated 32-byte seed!)
-    let seed = secrecy::SecretVec::new(vec![0u8; 32]);
+    // get seed from seed phrase and passphrase
+    let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    let bip39_passphrase = ""; // optional
+    let mnemonic = bip39::Mnemonic::parse(phrase).unwrap();
+    let seed64 = mnemonic.to_seed(bip39_passphrase);
+    // assumes passphrase "TREZOR"
+    // assert_eq!(&Vec::<u8>::from_hex("c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04").unwrap(), &seed64);
+    let seed = secrecy::SecretVec::new(seed64[..32].to_vec());
 
     // 2. Derive Unified Spending Key (USK) from seed
     let account_id = zip32::AccountId::try_from(0).unwrap();

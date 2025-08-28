@@ -8,6 +8,7 @@ name         = "reece_smith_merchant"
 crate-type   = ["rlib", "cdylib"]
 
 [dependencies]
+bip39 = "2.2.0"
 rand_core = "0.6.4"
 secrecy = "0.8.0"
 tempfile = "3.21.0"
