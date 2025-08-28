@@ -8,3 +8,7 @@ name         = "reece_smith_merchant"
 crate-type   = ["rlib", "cdylib"]
 
 [dependencies]
+
+
+[build-dependencies]
+cbindgen = "0.29.0"
