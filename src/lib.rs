@@ -2,10 +2,13 @@
 pub fn do_all_the_things() {
     use secrecy::ExposeSecret;
 
-    let temp_dir = tempfile::tempdir().unwrap();
-
     // let mut wdb = zcash_client_sqlite::WalletDb::for_path(temp_dir.path().join("wallet.db"), zcash_protocol::consensus::Network::MainNetwork, zcash_client_sqlite::util::SystemClock, rand_core::OsRng).unwrap();
-    let cdb = zcash_client_sqlite::BlockDb::for_path(temp_dir.path().join("cache.db")).unwrap();
+    let cdb = if false {
+        let temp_dir = tempfile::tempdir().unwrap();
+        zcash_client_sqlite::BlockDb::for_path(temp_dir.path().join("cache.db")).unwrap()
+    } else {
+        zcash_client_sqlite::BlockDb::for_path(":memory:").unwrap()
+    };
 
     // First run only: create/upgrade the schemas.
     zcash_client_sqlite::chain::init::init_cache_database(&cdb).unwrap();
