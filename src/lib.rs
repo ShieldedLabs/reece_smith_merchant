@@ -1,4 +1,27 @@
 
+mod high_latency_lightwalletd_rpc_calls;
+use high_latency_lightwalletd_rpc_calls::*;
+
+use std::ptr::slice_from_raw_parts;
+
+pub struct ConnectURIAndCertificateBlob {
+    https_uri_string_ptr: *const u8,
+    https_uri_string_len: usize,
+    certificate_blob_ptr: *const u8,
+    certificate_blob_len: usize,
+}
+
+pub struct LightwalletdEndpointArray {
+    ptr: *const ConnectURIAndCertificateBlob,
+    len: usize,
+}
+
+impl Into<&'static [ConnectURIAndCertificateBlob]> for LightwalletdEndpointArray {
+    fn into(self) -> &'static [ConnectURIAndCertificateBlob] {
+        unsafe { &*slice_from_raw_parts(self.ptr, self.len) }
+    }
+}
+
 pub fn do_all_the_things() {
     use secrecy::ExposeSecret;
 
@@ -33,11 +56,18 @@ pub fn do_all_the_things() {
     let ua: zcash_client_backend::address::UnifiedAddress = uivk.default_address(zcash_client_backend::keys::UnifiedAddressRequest::SHIELDED).unwrap().0;
     println!("Receive at: {}", ua.encode(&zcash_protocol::consensus::Network::MainNetwork));
 
-    for _ in 0..3 {
-        get_entire_mempool(uivk.clone());
-    }
-    // ------------------------------------------------------------------------------- //
+    let https_uri = "https://eu.zec.rocks:443";
+    let cert: &[u8] = include_bytes!("../eu.zec.rocks-leaf.der");
 
+    let mempool_status = simple_get_mempool_tx(LightwalletdEndpointArray {
+        len: 1,
+        ptr: &ConnectURIAndCertificateBlob {
+            https_uri_string_ptr: https_uri.as_ptr(),
+            https_uri_string_len: https_uri.len(),
+            certificate_blob_ptr: cert.as_ptr(),
+            certificate_blob_len: cert.len(),
+        } as *const ConnectURIAndCertificateBlob,
+    });
 }
 
 
@@ -70,146 +100,30 @@ pub extern "C" fn vector2_magnitude(vector: *const Vector2, kind: MyEnum) -> f32
 mod tests {
     use super::*;
 
+    fn zec_rocks_eu() -> LightwalletdEndpointArray {
+        let https_uri = "https://eu.zec.rocks:443";
+        let cert: &[u8] = include_bytes!("../eu.zec.rocks-leaf.der");
+        LightwalletdEndpointArray {
+            len: 1,
+            ptr: &ConnectURIAndCertificateBlob {
+                https_uri_string_ptr: https_uri.as_ptr(),
+                https_uri_string_len: https_uri.len(),
+                certificate_blob_ptr: cert.as_ptr(),
+                certificate_blob_len: cert.len(),
+            } as *const ConnectURIAndCertificateBlob,
+        }
+    }
+
     #[test]
     fn it_works() {
         do_all_the_things();
     }
-}
 
-
-// ============================================================================
-//                               NEW CODE BELOW
-// ============================================================================
-
-use std::time::Instant;
-use std::{error::Error, time::Duration};
-use tokio::runtime::Builder;
-use tonic::transport::Channel;
-
-// Generated client types from lightwalletd's proto
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
-use zcash_client_backend::proto::service::Exclude;
-
-use std::sync::Arc;
-use tonic::transport::{ClientTlsConfig, Endpoint};
-use rustls::{ClientConfig, RootCertStore};
-
-use rustls::client::danger::{ServerCertVerifier, ServerCertVerified, HandshakeSignatureValid};
-use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms};
-use rustls::{DigitallySignedStruct, SignatureScheme, Error as TlsError, CertificateError, DistinguishedName};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use tonic_rustls::channel::Endpoint as RustlsEndpoint;
-use rustls::crypto::CryptoProvider;
-use rustls::crypto::ring;
-
-#[derive(Debug)]
-struct ExactDerVerifier {
-    pinned_der: &'static [u8],
-    algs: WebPkiSupportedAlgorithms,
-}
-
-impl ServerCertVerifier for ExactDerVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, TlsError> {
-        // pin exact leaf DER
-        if end_entity.as_ref() == self.pinned_der {
-            Ok(ServerCertVerified::assertion())
-        } else {
-            Err(TlsError::InvalidCertificate(CertificateError::UnknownIssuer))
-        }
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, TlsError> {
-        verify_tls12_signature(message, cert, dss, &self.algs)
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, TlsError> {
-        verify_tls13_signature(message, cert, dss, &self.algs)
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.algs.supported_schemes()
+    #[test]
+    fn fetch_mempool_contents() {
+        let mempool_status = simple_get_mempool_tx(zec_rocks_eu());
+        println!("No try: {:?}", mempool_status);
+        let mempool_status = simple_try_get_mempool_tx(zec_rocks_eu()).unwrap();
+        println!("Try: {:?}", mempool_status);
     }
 }
-/// Connect to lightwalletd and stream mempool `CompactTx` items.
-/// Replace trial-decrypt stubs with your Sapling/Orchard routines.
-fn get_entire_mempool(
-    uivk: zcash_client_backend::keys::UnifiedIncomingViewingKey,
-) {
-    let rt = Builder::new_current_thread()
-        .enable_time()
-        .enable_io()
-        .build()
-        .expect("build tokio rt");
-    rt.block_on(async move {
-
-/*
-# grab only the first (leaf) cert as PEM
-openssl s_client -connect na.zec.rocks:443 -servername na.zec.rocks -showcerts </dev/null \
-| awk 'BEGIN{p=0}/BEGIN CERT/{p=1}/END CERT/{print; exit} p{print}' > na.zec.rocks-leaf.pem
-
-# convert to DER for a clean byte compare
-openssl x509 -in na.zec.rocks-leaf.pem -outform DER -out na.zec.rocks-leaf.der
-*/
-
-        let start_time = Instant::now();
-        // Embed the exact leaf certificate you captured
-        static PINNED_LEAF_DER: &[u8] = include_bytes!("../eu.zec.rocks-leaf.der");
-
-        let _ = CryptoProvider::install_default(ring::default_provider());
-
-        let algs = CryptoProvider::get_default()
-            .expect("CryptoProvider not installed")
-            .signature_verification_algorithms;
-
-        let verifier = Arc::new(ExactDerVerifier { pinned_der: PINNED_LEAF_DER, algs });
-
-        let mut cfg = ClientConfig::builder()
-            .dangerous() // allows custom verifier
-            .with_custom_certificate_verifier(verifier)
-            .with_no_client_auth();
-
-        // gRPC over HTTP/2 needs ALPN "h2"
-        cfg.alpn_protocols.push(b"h2".to_vec());
-        
-        let channel = RustlsEndpoint::from_static("https://eu.zec.rocks:443")
-            .tls_config(cfg).unwrap()  // <- your rustls::ClientConfig from above
-            .connect()
-            .await.unwrap();
-
-        let mut client = CompactTxStreamerClient::new(channel);
-
-        println!("Time 1: {} ms", start_time.elapsed().as_millis());
-        for _ in 0..4 {
-            let start_time = Instant::now();
-            let mut stream = client
-                .get_mempool_tx(Exclude { txid: Vec::new() })
-                .await.unwrap()
-                .into_inner();
-
-            while let Some(ct) = stream.message().await.unwrap() {
-            }
-            println!("Time 2: {} ms", start_time.elapsed().as_millis());
-        }
-    });
-}
-
-// Re-export the prost/tonic-generated module if needed by your build setup.
-// If your build uses `walletrpc` crate directly, this `mod` is not necessary.
-// mod walletrpc { tonic::include_proto!("cash.z.wallet.sdk.rpc"); }
