@@ -51,18 +51,33 @@ pub enum MyEnum {
     ThingB,
 }
 
-// Define a C-compatible function with extern "C" and #[no_mangle]
+use std::ptr::copy_nonoverlapping;
+
 #[unsafe(no_mangle)]
-pub extern "C" fn vector2_magnitude(vector: *const Vector2, kind: MyEnum) -> f32 {
-    // Safety: Ensure the pointer is valid in real code
-    unsafe {
-        if vector.is_null() {
-            return 0.0;
+/// Some documentation here
+pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_id_str: *const u8, merchant_id_str_len: usize, product_str: *const u8, product_str_len: usize, id_hash: &[u8; 64]) -> bool {
+    let prefix = "RSM receipt: ";
+    if prefix.len() + merchant_id_str_len + 1 + product_str_len + 1 + 64 <= 512 {
+        unsafe {
+            copy_nonoverlapping(prefix.as_bytes().as_ptr(), (*buf).as_mut_ptr(), prefix.len());
+            let mut o = prefix.len();
+            copy_nonoverlapping(merchant_id_str, (*buf).as_mut_ptr().add(o), merchant_id_str_len);
+            o += merchant_id_str_len;
+            copy_nonoverlapping("\n".as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), 1);
+            o += 1;
+            copy_nonoverlapping(product_str, (*buf).as_mut_ptr().add(o), product_str_len);
+            o += product_str_len;
+            copy_nonoverlapping("\n".as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), 1);
+            o += 1;
+            // OPTIONAL: pad with spaces/newlines/nbsp so we always know where to read the ID
+            copy_nonoverlapping((*id_hash).as_ptr(), (*buf).as_mut_ptr().add(o), 64);
         }
-        let v = &*vector;
-        (v.x * v.x + v.y * v.y).sqrt()
+        true
+    } else {
+        false
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +85,13 @@ mod tests {
     #[test]
     fn it_works() {
         do_all_the_things();
+        let mut buf = [0_u8; 512];
+        let merchant_str = "Mr Merchant";
+        let product_str = "Thing1: $12.80\n\
+                           Another thing: $4.00\n\
+                           Subtotal: $16.80";
+        let id_hash = [65_u8; 64];
+        memo_receipt_generate(&mut buf, merchant_str.as_ptr(), merchant_str.len(), product_str.as_ptr(), product_str.len(), &id_hash);
+        println!("buf:\n```\n{}\n```", std::str::from_utf8(&buf).expect("valid UTF8"));
     }
 }
