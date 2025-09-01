@@ -11,7 +11,9 @@ fn main() {
         },
         .. Default::default()
     };
-    generate_with_config(".", config)
-        .expect("Unable to generate bindings")
-        .write_to_file("reece_smith_merchant.h");
+
+    match generate_with_config(".", config) {
+        Err(err) => { eprintln!("Header-gen error: {}", err); }
+        Ok(v) => { v.write_to_file("reece_smith_merchant.h"); }
+    }
 }
