@@ -1,18 +1,16 @@
-typedef enum MyEnum {
-  MyEnum_ThingA,
-  MyEnum_ThingB,
-} MyEnum;
-
-typedef struct Vector2 {
-  float x;
-  float y;
-} Vector2;
-
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-float vector2_magnitude(const struct Vector2 *vector, enum MyEnum kind);
+/**
+ * Some documentation here
+ */
+bool memo_receipt_generate(uint8_t (*buf)[512],
+                           const uint8_t *merchant_name_str,
+                           size_t merchant_name_str_len,
+                           const uint8_t *product_str,
+                           size_t product_str_len,
+                           const uint8_t (*id_hash)[32]);
 
 #ifdef __cplusplus
 }  // extern "C"

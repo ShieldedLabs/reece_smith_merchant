@@ -1,5 +1,6 @@
 
 mod high_latency_lightwalletd_rpc_calls;
+use base64::Engine;
 use high_latency_lightwalletd_rpc_calls::*;
 
 use std::ptr::slice_from_raw_parts;
@@ -25,10 +26,13 @@ impl Into<&'static [ConnectURIAndCertificateBlob]> for LightwalletdEndpointArray
 pub fn do_all_the_things() {
     use secrecy::ExposeSecret;
 
-    let temp_dir = tempfile::tempdir().unwrap();
-
     // let mut wdb = zcash_client_sqlite::WalletDb::for_path(temp_dir.path().join("wallet.db"), zcash_protocol::consensus::Network::MainNetwork, zcash_client_sqlite::util::SystemClock, rand_core::OsRng).unwrap();
-    let cdb = zcash_client_sqlite::BlockDb::for_path(temp_dir.path().join("cache.db")).unwrap();
+    let cdb = if false {
+        let temp_dir = tempfile::tempdir().unwrap();
+        zcash_client_sqlite::BlockDb::for_path(temp_dir.path().join("cache.db")).unwrap()
+    } else {
+        zcash_client_sqlite::BlockDb::for_path(":memory:").unwrap()
+    };
 
     // First run only: create/upgrade the schemas.
     zcash_client_sqlite::chain::init::init_cache_database(&cdb).unwrap();
@@ -84,18 +88,54 @@ pub enum MyEnum {
     ThingB,
 }
 
-// Define a C-compatible function with extern "C" and #[no_mangle]
+use std::ptr::copy_nonoverlapping;
+
 #[unsafe(no_mangle)]
-pub extern "C" fn vector2_magnitude(vector: *const Vector2, kind: MyEnum) -> f32 {
-    // Safety: Ensure the pointer is valid in real code
-    unsafe {
-        if vector.is_null() {
-            return 0.0;
+/// Some documentation here
+pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: *const u8, merchant_name_str_len: usize, product_str: *const u8, product_str_len: usize, id_hash: &[u8; 32]) -> bool {
+    *buf = [0_u8; 512];
+    let prefix1 = "RSID:";
+
+    let mut rsm_id_base64 = [0_u8; 43];
+    let got_len = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode_slice(id_hash, &mut rsm_id_base64).unwrap();
+    assert_eq!(got_len, rsm_id_base64.len());
+
+    let prefix2 = "\nMERCHANT NAME: ";
+
+    for i in 0..merchant_name_str_len {
+        unsafe {
+            let c : u8 = *merchant_name_str.add(i);
+            if  (c >= b'0' && c <= b'9') ||
+                (c >= b'A' && c <= b'Z') ||
+                (c >= b'a' && c <= b'z') ||
+                c == b' ' || c == b'.'
+            {}
+            else { return false; }
         }
-        let v = &*vector;
-        (v.x * v.x + v.y * v.y).sqrt()
+    }
+
+    if prefix1.len() + rsm_id_base64.len() + prefix2.len() + merchant_name_str_len + 1 + product_str_len <= 512 {
+        unsafe {
+            let mut o = 0;
+            copy_nonoverlapping(prefix1.as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), prefix1.len());
+            o += prefix1.len();
+            copy_nonoverlapping(rsm_id_base64.as_ptr(), (*buf).as_mut_ptr().add(o), rsm_id_base64.len());
+            o += rsm_id_base64.len();
+            copy_nonoverlapping(prefix2.as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), prefix2.len());
+            o += prefix2.len();
+            copy_nonoverlapping(merchant_name_str, (*buf).as_mut_ptr().add(o), merchant_name_str_len);
+            o += merchant_name_str_len;
+            copy_nonoverlapping("\n".as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), 1);
+            o += 1;
+            copy_nonoverlapping(product_str, (*buf).as_mut_ptr().add(o), product_str_len);
+            o += product_str_len;
+        }
+        true
+    } else {
+        false
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +157,14 @@ mod tests {
     #[test]
     fn it_works() {
         do_all_the_things();
+        let mut buf = [0_u8; 512];
+        let merchant_str = "Google Inc.";
+        let product_str = "Thing1: 12.80 USD\n\
+                           Another thing: 4.00 USD\n\
+                           Subtotal: 16.80 USD";
+        let id_hash = [65_u8; 32];
+        memo_receipt_generate(&mut buf, merchant_str.as_ptr(), merchant_str.len(), product_str.as_ptr(), product_str.len(), &id_hash);
+        println!("buf:\n```\n{}\n```", std::str::from_utf8(&buf).expect("valid UTF8"));
     }
 
     #[test]

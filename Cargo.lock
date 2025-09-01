@@ -1752,6 +1752,7 @@ dependencies = [
 name = "reece_smith_merchant"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bip39",
  "cbindgen",
  "hex",
