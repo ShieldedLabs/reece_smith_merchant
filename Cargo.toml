@@ -12,10 +12,15 @@ bip39 = "2.2.0"
 rand_core = "0.6.4"
 secrecy = "0.8.0"
 tempfile = "3.21.0"
-zcash_client_backend = "0.19.1"
+zcash_client_backend = { version = "0.19.1", features = ["lightwalletd-tonic"] }
 zcash_client_sqlite = { version = "0.17.2", features = ["orchard"] }
 zcash_protocol = "0.5.4"
 zip32 = "0.2.0"
+tonic = { version = "0.13.1", features = ["transport", "channel", "tls-ring"] }
+tokio = { version = "1.47.1", default-features = false, features = ["rt", "time", "net", "io-util"] }
+hex = "0.4.3"
+rustls = { version = "0.23.31", default-features = false, features = ["ring"] }
+tonic-rustls = "0.2.0"
 
 [build-dependencies]
 cbindgen = "0.29.0"
