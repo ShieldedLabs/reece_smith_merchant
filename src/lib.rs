@@ -23,6 +23,30 @@ impl Into<&'static [ConnectURIAndCertificateBlob]> for LightwalletdEndpointArray
     }
 }
 
+#[repr(C)]
+#[derive(Debug)]
+pub struct Blake3Hash {
+    data: [u8; 32],
+}
+
+use std::{
+    ffi::c_void,
+    ptr::copy_nonoverlapping,
+    slice::from_raw_parts,
+};
+
+#[unsafe(no_mangle)]
+pub extern "C" fn create_rsid_from_merchant_and_tx(merchant_name_str: *const u8, merchant_name_str_len: usize, tx_data: *const c_void, tx_data_size: usize) -> Blake3Hash {
+    let data = unsafe {
+        *blake3::Hasher::new_derive_key("RSID")
+            .update(from_raw_parts(merchant_name_str, merchant_name_str_len))
+            .update(from_raw_parts(tx_data as *const u8, tx_data_size))
+            .finalize()
+            .as_bytes()
+    };
+    Blake3Hash { data }
+}
+
 pub fn do_all_the_things() {
     use secrecy::ExposeSecret;
 
@@ -88,16 +112,14 @@ pub enum MyEnum {
     ThingB,
 }
 
-use std::ptr::copy_nonoverlapping;
-
 #[unsafe(no_mangle)]
 /// Some documentation here
-pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: *const u8, merchant_name_str_len: usize, product_str: *const u8, product_str_len: usize, id_hash: &[u8; 32]) -> bool {
+pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: *const u8, merchant_name_str_len: usize, product_str: *const u8, product_str_len: usize, rsid: &[u8; 32]) -> bool {
     *buf = [0_u8; 512];
     let prefix1 = "RSID:";
 
     let mut rsm_id_base64 = [0_u8; 43];
-    let got_len = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode_slice(id_hash, &mut rsm_id_base64).unwrap();
+    let got_len = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode_slice(rsid, &mut rsm_id_base64).unwrap();
     assert_eq!(got_len, rsm_id_base64.len());
 
     let prefix2 = "\nMERCHANT NAME: ";
@@ -128,7 +150,6 @@ pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: 
             copy_nonoverlapping("\n".as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), 1);
             o += 1;
             copy_nonoverlapping(product_str, (*buf).as_mut_ptr().add(o), product_str_len);
-            o += product_str_len;
         }
         true
     } else {
@@ -162,8 +183,8 @@ mod tests {
         let product_str = "Thing1: 12.80 USD\n\
                            Another thing: 4.00 USD\n\
                            Subtotal: 16.80 USD";
-        let id_hash = [65_u8; 32];
-        memo_receipt_generate(&mut buf, merchant_str.as_ptr(), merchant_str.len(), product_str.as_ptr(), product_str.len(), &id_hash);
+        let rsid = [65_u8; 32];
+        memo_receipt_generate(&mut buf, merchant_str.as_ptr(), merchant_str.len(), product_str.as_ptr(), product_str.len(), &rsid);
         println!("buf:\n```\n{}\n```", std::str::from_utf8(&buf).expect("valid UTF8"));
     }
 
@@ -173,5 +194,14 @@ mod tests {
         println!("No try: {:?}", mempool_status);
         let mempool_status = simple_try_get_mempool_tx(zec_rocks_eu()).unwrap();
         println!("Try: {:?}", mempool_status);
+    }
+
+    #[test]
+    fn blake3_utility() {
+        let merchant_str = "Google Inc.";
+        let tx_c: u32 = 1234;
+        let tx_data: *const c_void = &tx_c as *const u32 as *const c_void;
+        let rsid: Blake3Hash = create_rsid_from_merchant_and_tx(merchant_str.as_ptr(), merchant_str.len(), tx_data, std::mem::size_of_val(&tx_c));
+        println!("RSID: {:?}", rsid);
     }
 }

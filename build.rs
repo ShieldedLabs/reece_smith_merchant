@@ -1,10 +1,13 @@
 use cbindgen::*;
 fn main() {
+    eprintln!("Starting header-gen");
     let config = Config{
         language: Language::C,
         cpp_compat: true,
         usize_is_size_t: true,
         no_includes: true,
+        tab_width: 4,
+        style: Style::Both,
         enumeration: EnumConfig {
             prefix_with_name: true,
             .. Default::default()
