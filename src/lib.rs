@@ -3,8 +3,37 @@ mod high_latency_lightwalletd_rpc_calls;
 use base64::Engine;
 use high_latency_lightwalletd_rpc_calls::*;
 
-use std::ptr::slice_from_raw_parts;
+/// cbindgen:ignore
+mod uhh {
+    pub const LOG: u32 = 1 << 0;
+    pub const CALLSTACK: u32 = 1 << 1;
+    pub const PANIC: u32 = 1 << 2;
+}
+fn uhh<T, E: std::fmt::Display> (result: Result<T, E>, on_fail: u32) -> Result<T, E> {
+    match &result {
+        Ok(_) => (),
 
+        Err(e) => {
+            if on_fail & (uhh::LOG | uhh::PANIC) != 0 {
+                eprintln!("{}", e)
+            }
+
+            if on_fail & uhh::CALLSTACK != 0 {
+                todo!("print backtrace")
+            }
+
+            if on_fail & uhh::PANIC != 0 {
+                panic!("error marked as unrecoverable")
+            }
+        }
+    }
+
+    result
+}
+
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct ConnectURIAndCertificateBlob {
     https_uri_string_ptr: *const u8,
     https_uri_string_len: usize,
@@ -12,6 +41,8 @@ pub struct ConnectURIAndCertificateBlob {
     certificate_blob_len: usize,
 }
 
+#[repr(C)]
+#[derive(Clone)]
 pub struct LightwalletdEndpointArray {
     ptr: *const ConnectURIAndCertificateBlob,
     len: usize,
@@ -32,6 +63,7 @@ pub struct Blake3Hash {
 use std::{
     ffi::c_void,
     ptr::copy_nonoverlapping,
+    ptr::slice_from_raw_parts,
     slice::from_raw_parts,
 };
 
@@ -95,7 +127,7 @@ pub fn do_all_the_things() {
             certificate_blob_ptr: cert.as_ptr(),
             certificate_blob_len: cert.len(),
         } as *const ConnectURIAndCertificateBlob,
-    });
+    }, uhh::PANIC);
 }
 
 
@@ -190,10 +222,32 @@ mod tests {
 
     #[test]
     fn fetch_mempool_contents() {
-        let mempool_status = simple_get_mempool_tx(zec_rocks_eu());
+        let mempool_status = simple_get_mempool_tx(zec_rocks_eu(), uhh::PANIC);
         println!("No try: {:?}", mempool_status);
-        let mempool_status = simple_try_get_mempool_tx(zec_rocks_eu()).unwrap();
+        let mempool_status = simple_get_mempool_tx(zec_rocks_eu(), uhh::LOG);
         println!("Try: {:?}", mempool_status);
+    }
+
+    #[test]
+    #[should_panic]
+    fn fetch_invalid_mempool_contents() {
+        let invalid_endpoint = {
+            let https_uri = "https://eu.ze.rocks:443";
+            let cert: &[u8] = include_bytes!("../eu.zec.rocks-leaf.der");
+            LightwalletdEndpointArray {
+                len: 1,
+                ptr: &ConnectURIAndCertificateBlob {
+                    https_uri_string_ptr: https_uri.as_ptr(),
+                    https_uri_string_len: https_uri.len(),
+                    certificate_blob_ptr: cert.as_ptr(),
+                    certificate_blob_len: cert.len(),
+                } as *const ConnectURIAndCertificateBlob,
+            }
+        };
+        let mempool_status = simple_get_mempool_tx(invalid_endpoint.clone(), uhh::LOG);
+        println!("Try: {:?}", mempool_status);
+        let mempool_status = simple_get_mempool_tx(invalid_endpoint.clone(), uhh::PANIC);
+        println!("No try: {:?}", mempool_status);
     }
 
     #[test]
