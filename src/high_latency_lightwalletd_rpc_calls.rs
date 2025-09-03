@@ -38,7 +38,7 @@ async fn get_verifier(algs: WebPkiSupportedAlgorithms, uri: &ConnectURIAndCertif
     Some(CompactTxStreamerClient::new(channel))
 }}
 
-async fn connect_to_server_and_produce_client_object(uris: &[ConnectURIAndCertificateBlob], on_fail: u32) -> Option<CompactTxStreamerClient<tonic_rustls::Channel>> { unsafe {
+async fn connect_to_server_and_produce_client_object(uris: &[ConnectURIAndCertificateBlob], on_fail: u32) -> Option<CompactTxStreamerClient<tonic_rustls::Channel>> {
     let _ = CryptoProvider::install_default(ring::default_provider());
 
     let algs = CryptoProvider::get_default().map(|x| x.signature_verification_algorithms)?;
@@ -49,24 +49,20 @@ async fn connect_to_server_and_produce_client_object(uris: &[ConnectURIAndCertif
             return Some(verifier);
         }
     }
-    return None;
-}}
+    None
+}
 
 
 use std::ptr::slice_from_raw_parts;
-use std::time::Instant;
-use std::{error::Error, time::Duration};
 use tokio::runtime::Builder;
-use tonic::transport::Channel;
 use zcash_client_backend::proto::compact_formats::CompactTx;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_backend::proto::service::Exclude;
 use std::sync::Arc;
-use tonic::transport::{ClientTlsConfig, Endpoint};
-use rustls::{ClientConfig, RootCertStore};
+use rustls::{ClientConfig};
 use rustls::client::danger::{ServerCertVerifier, ServerCertVerified, HandshakeSignatureValid};
 use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms};
-use rustls::{DigitallySignedStruct, SignatureScheme, Error as TlsError, CertificateError, DistinguishedName};
+use rustls::{DigitallySignedStruct, SignatureScheme, Error as TlsError, CertificateError};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use tonic_rustls::channel::Endpoint as RustlsEndpoint;
 use rustls::crypto::CryptoProvider;

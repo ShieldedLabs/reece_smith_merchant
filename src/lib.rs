@@ -9,13 +9,13 @@ mod uhh {
     pub const CALLSTACK: u32 = 1 << 1;
     pub const PANIC: u32 = 1 << 2;
 }
-fn uhh<T, E: std::fmt::Display> (result: Result<T, E>, on_fail: u32) -> Result<T, E> {
+fn uhh<T, E: std::fmt::Debug> (result: Result<T, E>, on_fail: u32) -> Result<T, E> {
     match &result {
         Ok(_) => (),
 
         Err(e) => {
             if on_fail & (uhh::LOG | uhh::PANIC) != 0 {
-                eprintln!("{}", e)
+                eprintln!("{:?}", e)
             }
 
             if on_fail & uhh::CALLSTACK != 0 {
@@ -79,10 +79,96 @@ pub extern "C" fn create_rsid_from_merchant_and_tx(merchant_name_str: *const u8,
     Blake3Hash { data }
 }
 
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    keys::{
+        UnifiedAddressRequest,
+        UnifiedFullViewingKey,
+        UnifiedIncomingViewingKey,
+        UnifiedSpendingKey,
+    },
+    proto::{
+        compact_formats::CompactTx
+    },
+};
+use zcash_note_encryption::{
+    try_compact_note_decryption,
+};
+use zcash_protocol::consensus::MAIN_NETWORK;
+use sapling_crypto::{
+    note_encryption::{
+        CompactOutputDescription,
+        SaplingDomain,
+        Zip212Enforcement,
+    },
+    SaplingIvk,
+};
+use orchard::{
+    note_encryption::{
+        CompactAction,
+        OrchardDomain,
+    },
+};
+
+pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIncomingViewingKey) -> Vec<CompactTx> {
+    let mut filtered_txs = Vec::new();
+
+    if let Some(txs) = txs {
+        let maybe_sapling_ivk = if let Some(ivk) = uivk.sapling() { Some(ivk.prepare()) } else { None };
+        let maybe_orchard_ivk = if let Some(ivk) = uivk.orchard() { Some(ivk.prepare()) } else { None };
+        let sapling_domain = SaplingDomain::new(Zip212Enforcement::On);
+
+        for tx in txs {
+            // if let Some(sapling_ivk) = maybe_sapling_ivk {
+            //     for sapling_outputs in tx.outputs {
+
+            //     }
+            // }
+
+            let tx_hash: &[u8] = &tx.hash;
+            let tx_hash: Result<&[u8; 32],_> = tx_hash.try_into();
+            match tx_hash {
+                Ok(tx_hash) => println!("tx {:?}", tx_hash),
+                Err(err) => println!("tx not parsing (len {}): {:?}, {:?}", tx.hash.len(), tx.hash, err),
+            }
+
+            let mut is_found = false;
+
+            if let Some(orchard_ivk) = &maybe_orchard_ivk {
+                for orchard_action in &tx.actions {
+                    let Ok(action) = uhh(CompactAction::try_from(orchard_action), uhh::LOG) else { continue; };
+                    let orchard_domain = OrchardDomain::for_compact_action(&action);
+                    // TODO: see if we can get memo
+                    if let Some((_note, recipient)) = try_compact_note_decryption(&orchard_domain, orchard_ivk, &action) {
+                        if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
+                            println!("  recipient for tx: {}", ua.encode(&MAIN_NETWORK));
+                        } else {
+                            println!("  recipient for tx not parsed: {:?}", recipient);
+                        }
+
+                        // filtered_txs.push(());
+                        is_found = true;
+                        // break;
+                    }
+                }
+            }
+
+
+            // if !is_found
+            // Option<(D::Note, D::Recipient, D::Memo)>
+            // if is_found {
+                // filtered_txs.push();
+            // }
+        }
+    }
+
+    filtered_txs
+}
+
 pub fn do_all_the_things() {
     use secrecy::ExposeSecret;
 
-    // let mut wdb = zcash_client_sqlite::WalletDb::for_path(temp_dir.path().join("wallet.db"), zcash_protocol::consensus::Network::MainNetwork, zcash_client_sqlite::util::SystemClock, rand_core::OsRng).unwrap();
+    // let mut wdb = zcash_client_sqlite::WalletDb::for_path(temp_dir.path().join("wallet.db"), MAIN_NETWORK, zcash_client_sqlite::util::SystemClock, rand_core::OsRng).unwrap();
     let cdb = if false {
         let temp_dir = tempfile::tempdir().unwrap();
         zcash_client_sqlite::BlockDb::for_path(temp_dir.path().join("cache.db")).unwrap()
@@ -105,16 +191,25 @@ pub fn do_all_the_things() {
 
     // 2. Derive Unified Spending Key (USK) from seed
     let account_id = zip32::AccountId::try_from(0).unwrap();
-    let usk = zcash_client_backend::keys::UnifiedSpendingKey::from_seed(&zcash_protocol::consensus::MAIN_NETWORK, seed.expose_secret(), account_id).unwrap();
+    let usk = UnifiedSpendingKey::from_seed(&MAIN_NETWORK, seed.expose_secret(), account_id).unwrap();
 
     // 3. Derive Unified Full Viewing Key (UFVK)
-    let ufvk: zcash_client_backend::keys::UnifiedFullViewingKey = usk.to_unified_full_viewing_key();
-    let uivk: zcash_client_backend::keys::UnifiedIncomingViewingKey = ufvk.to_unified_incoming_viewing_key();
+    let ufvk: UnifiedFullViewingKey = usk.to_unified_full_viewing_key();
+    let uivk: UnifiedIncomingViewingKey = ufvk.to_unified_incoming_viewing_key();
+    let ufvk_encode = ufvk.encode(&MAIN_NETWORK);
+    let ufvk_decode = UnifiedFullViewingKey::decode(&MAIN_NETWORK, &ufvk_encode).unwrap();
+    println!("Full Viewing Key:     {}", ufvk.encode(&MAIN_NETWORK));
+    println!("Full Viewing Key 2:   {}", ufvk_decode.encode(&MAIN_NETWORK));
+    println!("Incoming Viewing Key: {}", uivk.encode(&MAIN_NETWORK));
+    assert_eq!(ufvk_encode, ufvk_decode.encode(&MAIN_NETWORK), "roundtrip failed");
+
+    let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+
     // Derive the account’s UFVK and default Unified Address (UA).
     // TODO: we want to generate these on a dev PC and transfer to the lower-privileged server
     // ALT: we can do specific handling for Sapling/Orchard incoming view keys without going through a full key
-    let ua: zcash_client_backend::address::UnifiedAddress = uivk.default_address(zcash_client_backend::keys::UnifiedAddressRequest::SHIELDED).unwrap().0;
-    println!("Receive at: {}", ua.encode(&zcash_protocol::consensus::Network::MainNetwork));
+    let ua: UnifiedAddress = uivk.default_address(UnifiedAddressRequest::SHIELDED).unwrap().0;
+    println!("Receive at: {}", ua.encode(&MAIN_NETWORK));
 
     let https_uri = "https://eu.zec.rocks:443";
     let cert: &[u8] = include_bytes!("../eu.zec.rocks-leaf.der");
@@ -226,6 +321,18 @@ mod tests {
         println!("No try: {:?}", mempool_status);
         let mempool_status = simple_get_mempool_tx(zec_rocks_eu(), uhh::LOG);
         println!("Try: {:?}", mempool_status);
+        let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+        filter_compact_txs_by_uivk(&mempool_status, &uivk);
+        // found:           u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f
+        // orchard address: u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f
+    }
+
+    #[ignore]
+    #[test]
+    fn fetch_mempool_contents_indefinitely() {
+        loop {
+            fetch_mempool_contents();
+        }
     }
 
     #[test]

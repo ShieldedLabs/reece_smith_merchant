@@ -1770,8 +1770,10 @@ dependencies = [
  "blake3",
  "cbindgen",
  "hex",
+ "orchard",
  "rand_core",
  "rustls",
+ "sapling-crypto",
  "secrecy",
  "tempfile",
  "tokio",
@@ -1779,6 +1781,7 @@ dependencies = [
  "tonic-rustls",
  "zcash_client_backend",
  "zcash_client_sqlite",
+ "zcash_note_encryption",
  "zcash_protocol",
  "zip32",
 ]
