@@ -79,6 +79,10 @@ pub extern "C" fn create_rsid_from_merchant_and_tx(merchant_name_str: *const u8,
     Blake3Hash { data }
 }
 
+use zcash_address::{
+    ToAddress,
+    ZcashAddress,
+};
 use zcash_client_backend::{
     address::UnifiedAddress,
     keys::{
@@ -92,23 +96,19 @@ use zcash_client_backend::{
         CompactTx,
     },
 };
-use zcash_note_encryption::{
-    try_compact_note_decryption,
+use zcash_note_encryption::try_compact_note_decryption;
+use zcash_protocol::consensus::{
+    MAIN_NETWORK,
+    Parameters,
 };
-use zcash_protocol::consensus::MAIN_NETWORK;
-use sapling_crypto::{
-    note_encryption::{
-        CompactOutputDescription,
-        SaplingDomain,
-        Zip212Enforcement,
-    },
-    SaplingIvk,
+use sapling_crypto::note_encryption::{
+    CompactOutputDescription,
+    SaplingDomain,
+    Zip212Enforcement,
 };
-use orchard::{
-    note_encryption::{
-        CompactAction,
-        OrchardDomain,
-    },
+use orchard::note_encryption::{
+    CompactAction,
+    OrchardDomain,
 };
 
 pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIncomingViewingKey) -> Vec<CompactTx> {
@@ -120,12 +120,6 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
         let sapling_domain = SaplingDomain::new(Zip212Enforcement::On);
 
         for tx in txs {
-            // if let Some(sapling_ivk) = maybe_sapling_ivk {
-            //     for sapling_outputs in tx.outputs {
-
-            //     }
-            // }
-
             let tx_hash: &[u8] = &tx.hash;
             let tx_hash: Result<&[u8; 32],_> = tx_hash.try_into();
             match tx_hash {
@@ -135,6 +129,27 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
 
             let mut is_found = false;
 
+
+            if let Some(sapling_ivk) = &maybe_sapling_ivk {
+                for sapling_output in &tx.outputs {
+                    // TODO: see if we can get memo
+                    let Ok(output) = uhh(CompactOutputDescription::try_from(sapling_output), uhh::LOG) else { continue; };
+                    if let Some((_note, recipient)) = try_compact_note_decryption(&sapling_domain, sapling_ivk, &output) {
+                        match UnifiedAddress::from_receivers(None, Some(recipient), None) {
+                            Some(ua) => println!("  unified sapling recipient for tx: {}", ua.encode(&MAIN_NETWORK)),
+                            None     => println!("  unified sapling recipient for tx not parsed: {:?}", recipient),
+                        }
+
+                        let za = ZcashAddress::from_sapling(MAIN_NETWORK.network_type(), recipient.to_bytes());
+                        println!("  zcash   sapling recipient for tx: {}", za);
+
+                        // filtered_txs.push(());
+                        is_found = true;
+                        // break;
+                    }
+                }
+            }
+
             if let Some(orchard_ivk) = &maybe_orchard_ivk {
                 for orchard_action in &tx.actions {
                     let Ok(action) = uhh(CompactAction::try_from(orchard_action), uhh::LOG) else { continue; };
@@ -142,9 +157,9 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
                     // TODO: see if we can get memo
                     if let Some((_note, recipient)) = try_compact_note_decryption(&orchard_domain, orchard_ivk, &action) {
                         if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
-                            println!("  recipient for tx: {}", ua.encode(&MAIN_NETWORK));
+                            println!("  unified orchard recipient for tx: {}", ua.encode(&MAIN_NETWORK));
                         } else {
-                            println!("  recipient for tx not parsed: {:?}", recipient);
+                            println!("  unified orchard recipient for tx not parsed: {:?}", recipient);
                         }
 
                         // filtered_txs.push(());
@@ -326,6 +341,8 @@ mod tests {
         filter_compact_txs_by_uivk(&mempool_status, &uivk);
         // found:           u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f
         // orchard address: u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f
+        // given sapling:   zs1zkym0uldnxamm7c8n2tlalps0y08cll3q2ptgmslgzfpvtwh0zqt8ttlyv4p9gsysv2v75xmx5x
+        // found sapling:   zs1zkym0uldnxamm7c8n2tlalps0y08cll3q2ptgmslgzfpvtwh0zqt8ttlyv4p9gsysv2v75xmx5x
     }
 
     #[ignore]
@@ -359,9 +376,15 @@ mod tests {
     }
 
     #[test]
-    fn find_known_transaction_using_uivk() {
+    fn find_known_transactions_using_uivk() {
         let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+
         let maybe_block = simple_get_block(zec_rocks_eu(), 3051998, uhh::LOG);
+        if let Some(block) = maybe_block {
+            filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
+        }
+
+        let maybe_block = simple_get_block(zec_rocks_eu(), 3052062, uhh::LOG);
         if let Some(block) = maybe_block {
             filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
         }

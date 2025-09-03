@@ -1779,6 +1779,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-rustls",
+ "zcash_address",
  "zcash_client_backend",
  "zcash_client_sqlite",
  "zcash_note_encryption",
