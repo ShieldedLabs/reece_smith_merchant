@@ -321,6 +321,10 @@ mod tests {
         }
     }
 
+    fn test_uivk() -> UnifiedIncomingViewingKey {
+        UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap()
+    }
+
     #[test]
     fn it_works() {
         do_all_the_things();
@@ -340,7 +344,7 @@ mod tests {
         println!("No try: {:?}", mempool_status);
         let mempool_status = simple_get_mempool_tx(zec_rocks_eu(), uhh::LOG);
         println!("Try: {:?}", mempool_status);
-        let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+        let uivk = test_uivk();
         filter_compact_txs_by_uivk(&mempool_status, &uivk);
         // found:           u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f
         // orchard address: u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f
@@ -380,7 +384,7 @@ mod tests {
 
     #[test]
     fn find_known_transactions_using_uivk() {
-        let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+        let uivk = test_uivk();
 
         let maybe_block = simple_get_block(zec_rocks_eu(), 3051998, uhh::LOG);
         if let Some(block) = maybe_block {
@@ -419,7 +423,7 @@ mod tests {
 
     #[test]
     fn fetch_height_range() {
-        let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+        let uivk = test_uivk();
 
         let maybe_blocks = simple_get_block_range(zec_rocks_eu(), 3051998, 3052065, uhh::LOG);
         if let Some(blocks) = maybe_blocks {
