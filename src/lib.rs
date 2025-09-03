@@ -31,6 +31,9 @@ fn uhh<T, E: std::fmt::Debug> (result: Result<T, E>, on_fail: u32) -> Result<T, 
     result
 }
 
+// NOTE: if you use u64::MAX, it will get treated as negative and then GetBlockRange will reverse &
+// go to the start of the chain!
+const MAX_POSSIBLE_HEIGHT: u64 = i64::MAX as u64;
 
 #[repr(C)]
 #[derive(Clone)]
