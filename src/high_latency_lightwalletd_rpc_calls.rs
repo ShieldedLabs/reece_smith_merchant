@@ -58,6 +58,7 @@ use std::ptr::slice_from_raw_parts;
 use tokio::runtime::Builder;
 use zcash_client_backend::proto::service::{
     BlockId,
+    BlockRange,
     Exclude,
     compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -141,6 +142,33 @@ pub fn simple_get_mempool_tx(uris: LightwalletdEndpointArray, on_fail: u32) -> O
         }
     })
 }
+
+/// lo_height & hi_height are both *inclusive*
+pub fn simple_get_block_range(uris: LightwalletdEndpointArray, lo_height: u64, hi_height: u64, on_fail: u32) -> Option<Vec<CompactBlock>> {
+    run_this_async_future(async move {
+        let mut client = connect_to_server_and_produce_client_object(uris.into(), on_fail).await?;
+        let block_range = BlockRange {
+            start: Some(BlockId { height: lo_height, hash: Vec::new() }),
+            end:   Some(BlockId { height: hi_height, hash: Vec::new() }),
+        };
+        let stream = uhh(client.get_block_range(block_range).await, on_fail).ok()?;
+        let mut grpc_stream = stream.into_inner();
+
+        let mut blocks = Vec::new();
+        loop {
+            if let Ok(msg) = grpc_stream.message().await {
+                if let Some(block) = msg {
+                    blocks.push(block);
+                } else {
+                    return Some(blocks);
+                }
+            } else {
+                return None;
+            }
+        }
+    })
+}
+
 
 pub fn simple_get_block(uris: LightwalletdEndpointArray, height: u64, on_fail: u32) -> Option<CompactBlock> {
     run_this_async_future(async move {

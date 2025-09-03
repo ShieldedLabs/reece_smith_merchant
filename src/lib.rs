@@ -413,4 +413,17 @@ mod tests {
         let rsid: Blake3Hash = create_rsid_from_merchant_and_tx(merchant_str.as_ptr(), merchant_str.len(), tx_data, std::mem::size_of_val(&tx_c));
         println!("RSID: {:?}", rsid);
     }
+
+    #[test]
+    fn fetch_height_range() {
+        let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+
+        let maybe_blocks = simple_get_block_range(zec_rocks_eu(), 3051998, 3052065, uhh::LOG);
+        if let Some(blocks) = maybe_blocks {
+            for block in blocks {
+                println!("block at {}: {:?}", block.height, block.hash);
+                filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
+            }
+        }
+    }
 }
