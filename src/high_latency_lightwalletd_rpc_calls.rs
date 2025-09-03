@@ -53,11 +53,14 @@ async fn connect_to_server_and_produce_client_object(uris: &[ConnectURIAndCertif
 }
 
 
+use super::*;
 use std::ptr::slice_from_raw_parts;
 use tokio::runtime::Builder;
-use zcash_client_backend::proto::compact_formats::CompactTx;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
-use zcash_client_backend::proto::service::Exclude;
+use zcash_client_backend::proto::service::{
+    BlockId,
+    Exclude,
+    compact_tx_streamer_client::CompactTxStreamerClient,
+};
 use std::sync::Arc;
 use rustls::{ClientConfig};
 use rustls::client::danger::{ServerCertVerifier, ServerCertVerified, HandshakeSignatureValid};
@@ -117,6 +120,7 @@ impl ServerCertVerifier for ExactDerVerifier {
     }
 }
 
+// TODO: presumably we want to exclude all the transactions we've already seen
 pub fn simple_get_mempool_tx(uris: LightwalletdEndpointArray, on_fail: u32) -> Option<Vec<CompactTx>> {
     run_this_async_future(async move {
         let mut client = connect_to_server_and_produce_client_object(uris.into(), on_fail).await?;
@@ -135,5 +139,13 @@ pub fn simple_get_mempool_tx(uris: LightwalletdEndpointArray, on_fail: u32) -> O
                 return None;
             }
         }
+    })
+}
+
+pub fn simple_get_block(uris: LightwalletdEndpointArray, height: u64, on_fail: u32) -> Option<CompactBlock> {
+    run_this_async_future(async move {
+        let mut client = connect_to_server_and_produce_client_object(uris.into(), on_fail).await?;
+        let block_res = uhh(client.get_block(BlockId { height, hash: Vec::new() }).await, on_fail).ok()?;
+        Some(block_res.into_inner())
     })
 }

@@ -87,8 +87,9 @@ use zcash_client_backend::{
         UnifiedIncomingViewingKey,
         UnifiedSpendingKey,
     },
-    proto::{
-        compact_formats::CompactTx
+    proto::compact_formats::{
+        CompactBlock,
+        CompactTx,
     },
 };
 use zcash_note_encryption::{
@@ -355,6 +356,30 @@ mod tests {
         println!("Try: {:?}", mempool_status);
         let mempool_status = simple_get_mempool_tx(invalid_endpoint.clone(), uhh::PANIC);
         println!("No try: {:?}", mempool_status);
+    }
+
+    #[test]
+    fn find_known_transaction_using_uivk() {
+        let uivk = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap();
+        let maybe_block = simple_get_block(zec_rocks_eu(), 3051998, uhh::LOG);
+        if let Some(block) = maybe_block {
+            filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
+        }
+    }
+
+    #[ignore]
+    #[test]
+    fn dump_uivk() {
+        // TODO: make small binary
+        let ufvk_str = "";
+        let ufvk = UnifiedFullViewingKey::decode(&MAIN_NETWORK, ufvk_str).unwrap();
+        let uivk: UnifiedIncomingViewingKey = ufvk.to_unified_incoming_viewing_key();
+        println!("Started with UFVK {}\n\
+                  check:            {}\n\
+                  generated UIVK    {}",
+                  ufvk_str,
+                  ufvk.encode(&MAIN_NETWORK),
+                  uivk.encode(&MAIN_NETWORK));
     }
 
     #[test]
