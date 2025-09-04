@@ -63,10 +63,9 @@ use zcash_client_backend::proto::service::{
     compact_tx_streamer_client::CompactTxStreamerClient,
 };
 use std::sync::Arc;
-use rustls::{ClientConfig};
 use rustls::client::danger::{ServerCertVerifier, ServerCertVerified, HandshakeSignatureValid};
 use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms};
-use rustls::{DigitallySignedStruct, SignatureScheme, Error as TlsError, CertificateError};
+use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme, Error as TlsError, CertificateError};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use tonic_rustls::channel::Endpoint as RustlsEndpoint;
 use rustls::crypto::CryptoProvider;
@@ -144,7 +143,7 @@ pub fn simple_get_mempool_tx(uris: LightwalletdEndpointArray, on_fail: u32) -> O
 }
 
 /// lo_height & hi_height are both *inclusive*
-pub fn simple_get_block_range(uris: LightwalletdEndpointArray, lo_height: u64, hi_height: u64, on_fail: u32) -> Option<Vec<CompactBlock>> {
+pub fn simple_get_compact_block_range(uris: LightwalletdEndpointArray, lo_height: u64, hi_height: u64, on_fail: u32) -> Option<Vec<CompactBlock>> {
     run_this_async_future(async move {
         let mut client = connect_to_server_and_produce_client_object(uris.into(), on_fail).await?;
         let block_range = BlockRange {
@@ -170,7 +169,7 @@ pub fn simple_get_block_range(uris: LightwalletdEndpointArray, lo_height: u64, h
 }
 
 
-pub fn simple_get_block(uris: LightwalletdEndpointArray, height: u64, on_fail: u32) -> Option<CompactBlock> {
+pub fn simple_get_compact_block(uris: LightwalletdEndpointArray, height: u64, on_fail: u32) -> Option<CompactBlock> {
     run_this_async_future(async move {
         let mut client = connect_to_server_and_produce_client_object(uris.into(), on_fail).await?;
         let block_res = uhh(client.get_block(BlockId { height, hash: Vec::new() }).await, on_fail).ok()?;

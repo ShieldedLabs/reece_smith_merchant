@@ -36,7 +36,7 @@ fn uhh<T, E: std::fmt::Debug> (result: Result<T, E>, on_fail: u32) -> Result<T, 
 const MAX_POSSIBLE_HEIGHT: u64 = i64::MAX as u64;
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ConnectURIAndCertificateBlob {
     https_uri_string_ptr: *const u8,
     https_uri_string_len: usize,
@@ -45,7 +45,7 @@ pub struct ConnectURIAndCertificateBlob {
 }
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LightwalletdEndpointArray {
     ptr: *const ConnectURIAndCertificateBlob,
     len: usize,
@@ -307,7 +307,7 @@ pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: 
 mod tests {
     use super::*;
 
-    fn zec_rocks_eu() -> LightwalletdEndpointArray {
+    const ZEC_ROCKS_EU: LightwalletdEndpointArray = {
         let https_uri = "https://eu.zec.rocks:443";
         let cert: &[u8] = include_bytes!("../eu.zec.rocks-leaf.der");
         LightwalletdEndpointArray {
@@ -319,7 +319,7 @@ mod tests {
                 certificate_blob_len: cert.len(),
             } as *const ConnectURIAndCertificateBlob,
         }
-    }
+    };
 
     fn test_uivk() -> UnifiedIncomingViewingKey {
         UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap()
@@ -340,9 +340,9 @@ mod tests {
 
     #[test]
     fn fetch_mempool_contents() {
-        let mempool_status = simple_get_mempool_tx(zec_rocks_eu(), uhh::PANIC);
+        let mempool_status = simple_get_mempool_tx(ZEC_ROCKS_EU, uhh::PANIC);
         println!("No try: {:?}", mempool_status);
-        let mempool_status = simple_get_mempool_tx(zec_rocks_eu(), uhh::LOG);
+        let mempool_status = simple_get_mempool_tx(ZEC_ROCKS_EU, uhh::LOG);
         println!("Try: {:?}", mempool_status);
         let uivk = test_uivk();
         filter_compact_txs_by_uivk(&mempool_status, &uivk);
@@ -386,12 +386,12 @@ mod tests {
     fn find_known_transactions_using_uivk() {
         let uivk = test_uivk();
 
-        let maybe_block = simple_get_block(zec_rocks_eu(), 3051998, uhh::LOG);
+        let maybe_block = simple_get_compact_block(ZEC_ROCKS_EU, 3051998, uhh::LOG);
         if let Some(block) = maybe_block {
             filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
         }
 
-        let maybe_block = simple_get_block(zec_rocks_eu(), 3052062, uhh::LOG);
+        let maybe_block = simple_get_compact_block(ZEC_ROCKS_EU, 3052062, uhh::LOG);
         if let Some(block) = maybe_block {
             filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
         }
@@ -425,7 +425,8 @@ mod tests {
     fn fetch_height_range() {
         let uivk = test_uivk();
 
-        let maybe_blocks = simple_get_block_range(zec_rocks_eu(), 3051998, 3052065, uhh::LOG);
+        let on_fail = uhh::PANIC;
+        let maybe_blocks = simple_get_compact_block_range(ZEC_ROCKS_EU, 3051998, 3052065, on_fail);
         if let Some(blocks) = maybe_blocks {
             for block in blocks {
                 println!("block at {}: {:?}", block.height, block.hash);
