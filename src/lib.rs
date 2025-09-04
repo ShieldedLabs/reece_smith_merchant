@@ -202,26 +202,7 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
 pub fn read_tx_with_uivk(tx: TransactionData<zcash_primitives::transaction::Authorized>, uivk: &UnifiedIncomingViewingKey) -> Option<(u64, [u8; 512])> {
     let maybe_sapling_ivk = if let Some(ivk) = uivk.sapling() { Some(ivk.prepare()) } else { None };
     let maybe_orchard_ivk = if let Some(ivk) = uivk.orchard() { Some(ivk.prepare()) } else { None };
-
-//     if let Some(sapling_ivk) = &maybe_sapling_ivk {
-//         for sapling_output in &tx.outputs {
-//             // TODO: see if we can get memo
-//             let Ok(output) = uhh(CompactOutputDescription::try_from(sapling_output), uhh::LOG) else { continue; };
-//             if let Some((_note, recipient, memo)) = try_note_decryption(&sapling_domain, sapling_ivk, &output) {
-//                 match UnifiedAddress::from_receivers(None, Some(recipient), None) {
-//                     Some(ua) => println!("  unified sapling recipient for tx: {}", ua.encode(&MAIN_NETWORK)),
-//                     None     => println!("  unified sapling recipient for tx not parsed: {:?}", recipient),
-//                 }
-
-//                 let za = ZcashAddress::from_sapling(MAIN_NETWORK.network_type(), recipient.to_bytes());
-//                 println!("  zcash   sapling recipient for tx: {}", za);
-
-//                 // filtered_txs.push(());
-//                 is_found = true;
-//                 // break;
-//             }
-//         }
-//     }
+    let sapling_domain = SaplingDomain::new(Zip212Enforcement::On);
 
     let mut res = None;
 
@@ -237,12 +218,30 @@ pub fn read_tx_with_uivk(tx: TransactionData<zcash_primitives::transaction::Auth
 
                 let value = note.value().inner();
                 println!("Value: {} zats, Memo:\n---\n{}\n---\n", value, String::from_utf8_lossy(&memo));
-
                 if res.is_none() {
                     res = Some((value, memo));
                 }
                 // TODO: account for multiple notes in the same transaction
-                // break;
+            }
+        }
+    }
+
+    if let (Some(ivk), Some(bundle)) = (&maybe_sapling_ivk, tx.sapling_bundle()) {
+        for output in bundle.shielded_outputs() {
+            if let Some((note, recipient, memo)) = try_note_decryption(&sapling_domain, ivk, output) {
+                match UnifiedAddress::from_receivers(None, Some(recipient), None) {
+                    Some(ua) => println!("  unified sapling recipient for tx: {}", ua.encode(&MAIN_NETWORK)),
+                    None     => println!("  unified sapling recipient for tx not parsed: {:?}", recipient),
+                }
+
+                let za = ZcashAddress::from_sapling(MAIN_NETWORK.network_type(), recipient.to_bytes());
+                println!("  zcash   sapling recipient for tx: {}", za);
+
+                let value = note.value().inner();
+                println!("Value: {} zats, Memo:\n---\n{}\n---\n", value, String::from_utf8_lossy(&memo));
+                if res.is_none() {
+                    res = Some((value, memo));
+                }
             }
         }
     }
@@ -506,11 +505,21 @@ mod tests {
             MemoValueAtHeight {
                 height: 3051998,
                 value: 50000,
-                memo: memo_from_str("Test memo contents.\n\nRSMID:0123456789ABCDEFabcdef")
+                memo: memo_from_str("Test memo contents.\n\nRSMID:0123456789ABCDEFabcdef"),
             },
-
+            MemoValueAtHeight {
+                height: 3052062,
+                value: 30000,
+                memo: memo_from_str(
+                    "🛡MSG\n\
+                    u16jd565hta2s78r4hrjkn5jxzyjyzt98jkaffv2jvwy098scxdvhfx69rrynw3y0whk7uatz3586axjk6tgxsqw8z3mw025ld5lq649tkgcjuu4v3t5m9amhp6pc6rcxh207fjvtdnuu5tq2tdwqzkaac2ad055pdea5k99eypv70s6le8884j5au56p2yp6ztr6fdd7qtqn42hk8hde\n\
+                    Ywallet Subject\n\
+                    Memo: Sent from YWallet"
+                ),
+            },
         ];
 
+        let mut found_i = 0;
         let on_fail = uhh::PANIC;
         let maybe_blocks = simple_get_compact_block_range(ZEC_ROCKS_EU, 3051998, 3052065, on_fail);
         if let Some(blocks) = maybe_blocks {
@@ -522,7 +531,8 @@ mod tests {
                         println!("  Retrieved full tx with txid: {:?}", tx.txid());
                         assert_eq!(&<[u8;32]>::from(tx.txid()), compact_tx.hash.as_slice());
                         if let Some((value, memo)) = read_tx_with_uivk(tx.into_data(), &uivk) {
-                            assert_eq!(vals[0], MemoValueAtHeight{ height: block.height, value, memo });
+                            assert_eq!(vals[found_i], MemoValueAtHeight{ height: block.height, value, memo });
+                            found_i += 1;
                         }
                     } else {
                         println!("  Couldn't retrieve full tx");
