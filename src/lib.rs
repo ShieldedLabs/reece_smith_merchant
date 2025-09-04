@@ -94,13 +94,25 @@ use zcash_client_backend::{
         UnifiedIncomingViewingKey,
         UnifiedSpendingKey,
     },
-    proto::compact_formats::{
-        CompactBlock,
-        CompactTx,
+    proto::{
+        compact_formats::{
+            CompactBlock,
+            CompactTx,
+        },
+        service::{
+            RawTransaction,
+            TxFilter,
+        },
     },
 };
 use zcash_note_encryption::try_compact_note_decryption;
+use zcash_primitives::transaction::{
+    Transaction,
+    TransactionData,
+};
 use zcash_protocol::consensus::{
+    BlockHeight,
+    BranchId,
     MAIN_NETWORK,
     Parameters,
 };
@@ -430,7 +442,15 @@ mod tests {
         if let Some(blocks) = maybe_blocks {
             for block in blocks {
                 println!("block at {}: {:?}", block.height, block.hash);
-                filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
+                let compact_txs = filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
+                for compact_tx in &compact_txs {
+                    if let Some(tx) = simple_get_raw_transaction(ZEC_ROCKS_EU, block.height, compact_tx.hash.clone(), on_fail) {
+                        println!("  Retrieved full tx with txid: {:?}", tx.txid());
+                        assert_eq!(&<[u8;32]>::from(tx.txid()), compact_tx.hash.as_slice());
+                    } else {
+                        println!("  Couldn't retrieve full tx");
+                    }
+                }
             }
         }
     }

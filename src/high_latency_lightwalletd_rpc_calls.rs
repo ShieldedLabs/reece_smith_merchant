@@ -176,3 +176,17 @@ pub fn simple_get_compact_block(uris: LightwalletdEndpointArray, height: u64, on
         Some(block_res.into_inner())
     })
 }
+
+pub fn simple_get_raw_transaction(uris: LightwalletdEndpointArray, block_height: u64, tx_hash: Vec<u8>, on_fail: u32) -> Option<Transaction> {
+    run_this_async_future(async move {
+        let mut client = connect_to_server_and_produce_client_object(uris.into(), on_fail).await?;
+        let raw_tx_res = uhh(client.get_transaction(TxFilter { block: None, index: 0, hash: tx_hash.to_vec() }).await, on_fail).ok()?;
+        // NOTE: docs suggest we can't rely on the height field here: https://github.com/zcash/librustzcash/issues/1484
+        // We used a block with height (or mempool) to get this transaction anyway, so it should be known by the caller.
+        let raw_tx: RawTransaction = raw_tx_res.into_inner();
+        let height = BlockHeight::from_u32(uhh(block_height.try_into(), on_fail).ok()?);
+        let tx = uhh(Transaction::read(&*raw_tx.data, BranchId::for_height(&MAIN_NETWORK, height)), on_fail).ok()?;
+
+        Some(tx)
+    })
+}
