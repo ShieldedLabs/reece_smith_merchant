@@ -5,7 +5,7 @@ edition = "2024"
 
 [lib]
 name         = "reece_smith_merchant"
-crate-type   = ["rlib", "cdylib"]
+crate-type   = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
 bip39 = "2.2.0"

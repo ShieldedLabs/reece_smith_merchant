@@ -25,6 +25,14 @@ bool rsm_parse_incoming_viewing_key_from_string(const uint8_t *unified_incoming_
 /**
  * Some documentation here
  */
+size_t rsm_convert_unified_full_viewing_key_string_to_unified_incoming_viewing_key_string(const uint8_t *unified_full_viewing_key_str,
+                                                                                          size_t unified_full_viewing_key_str_len,
+                                                                                          uint8_t *out_buf,
+                                                                                          size_t out_buf_len);
+
+/**
+ * Some documentation here
+ */
 bool memo_receipt_generate(uint8_t (*buf)[512],
                            const uint8_t *merchant_name_str,
                            size_t merchant_name_str_len,

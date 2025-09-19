@@ -355,6 +355,8 @@ pub extern "C" fn rsm_parse_incoming_viewing_key_from_string(unified_incoming_vi
     }
 }
 
+#[unsafe(no_mangle)]
+/// Some documentation here
 pub extern "C" fn rsm_convert_unified_full_viewing_key_string_to_unified_incoming_viewing_key_string(unified_full_viewing_key_str: *const u8, unified_full_viewing_key_str_len: usize, out_buf: *mut u8, out_buf_len: usize) -> usize {
     unsafe {
         let v = UnifiedFullViewingKey::decode(&MAIN_NETWORK, &String::from_utf8_lossy(
