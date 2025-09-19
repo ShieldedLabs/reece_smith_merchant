@@ -2,6 +2,7 @@
 mod high_latency_lightwalletd_rpc_calls;
 use base64::Engine;
 use high_latency_lightwalletd_rpc_calls::*;
+use zip32::DiversifierIndex;
 
 /// cbindgen:ignore
 mod uhh {
@@ -323,6 +324,54 @@ pub enum MyEnum {
     ThingB,
 }
 
+#[derive(PartialEq, Eq, Debug)]
+#[repr(C)]
+pub struct RSMIncomingViewingKey {
+    internal_orchard: orchard::keys::IncomingViewingKey,
+}
+impl RSMIncomingViewingKey {
+    fn to_uivk(&self) -> UnifiedIncomingViewingKey {
+        UnifiedIncomingViewingKey::new(None, Some(self.internal_orchard.clone()))
+    }
+    fn unified_address(&self) -> String {
+        self.to_uivk().address(DiversifierIndex::new(), UnifiedAddressRequest::AllAvailableKeys).unwrap().encode(&MAIN_NETWORK)
+    }
+}
+
+#[unsafe(no_mangle)]
+/// Some documentation here
+pub extern "C" fn rsm_parse_incoming_viewing_key_from_string(unified_incoming_viewing_key_str: *const u8, unified_incoming_viewing_key_str_len: usize, key_out: *mut RSMIncomingViewingKey) -> bool {
+    unsafe {
+        let v = UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, &String::from_utf8_lossy(
+            &*slice_from_raw_parts(unified_incoming_viewing_key_str, unified_incoming_viewing_key_str_len)));
+        if v.is_err() { return false; }
+        let v = v.unwrap();
+        let v = v.orchard().clone();
+        if v.is_none() { return false; }
+        let v = v.unwrap();
+        *key_out = RSMIncomingViewingKey { internal_orchard: v };
+
+        true
+    }
+}
+
+pub extern "C" fn rsm_convert_unified_full_viewing_key_string_to_unified_incoming_viewing_key_string(unified_full_viewing_key_str: *const u8, unified_full_viewing_key_str_len: usize, out_buf: *mut u8, out_buf_len: usize) -> usize {
+    unsafe {
+        let v = UnifiedFullViewingKey::decode(&MAIN_NETWORK, &String::from_utf8_lossy(
+            &*slice_from_raw_parts(unified_full_viewing_key_str, unified_full_viewing_key_str_len)));
+        if v.is_err() { return 0; }
+        let v = v.unwrap();
+        let string = v.to_unified_incoming_viewing_key().encode(&MAIN_NETWORK);
+        let bytes = string.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() && i < out_buf_len {
+            *out_buf.add(i) = bytes[i];
+            i += 1;
+        }
+        i
+    }
+}
+
 #[unsafe(no_mangle)]
 /// Some documentation here
 pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: *const u8, merchant_name_str_len: usize, product_str: *const u8, product_str_len: usize, rsid: &[u8; 32]) -> bool {
@@ -388,6 +437,33 @@ mod tests {
 
     fn test_uivk() -> UnifiedIncomingViewingKey {
         UnifiedIncomingViewingKey::decode(&MAIN_NETWORK, "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj").unwrap()
+    }
+    #[allow(invalid_value)]
+    fn test_viewing_key() -> RSMIncomingViewingKey {
+        unsafe {
+            let string = "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj".as_bytes();
+            let mut key: RSMIncomingViewingKey = std::mem::MaybeUninit::uninit().assume_init();
+            assert!(rsm_parse_incoming_viewing_key_from_string(string.as_ptr(), string.len(), &mut key as *mut RSMIncomingViewingKey));
+            key
+        }
+    }
+    #[test]
+    fn print_unified_address_for_orchard_only_receiver_and_check_same() {
+        let key = test_viewing_key();
+        println!("Test key UA: '{}'", key.unified_address())
+    }
+    #[allow(invalid_value)]
+    #[test]
+    fn check_test_key_same_as_ufvk_derivation() {
+        unsafe {
+            let src_string = "uview1x2s5ketm90fzfgka67szt6xdg0gdvm6wjce7h7hvypvcvj63fqp0t6ldyk9wsunpngg32uaek69nlmj3jhxllsn749l5tjjmt3g52ulgka3yyrrxfh7lyq9ffennyuqydnclw39d9rjtklvljdfvpuq0wpmuf8x4lmzaxeqeucpu7euky3spqu7kp839c7remlgc92lz9am8y8etdzstszdx2yhtjkh0ke3umr5ycr5rfmhcz4w26aj4d7cscpumc3xdzerdnfsf44kg67t6hv08m2uqyfzfy75p6rvp8kz8yv368f2q3qpfd27hkwxy96pu8g635zcpc3lezecq9tl2jcdf9maez3wj5nhn05r8hxeycvnkj9246aj5nfe2twkh77syat9dd".as_bytes();
+            let mut buf: Vec<u8> = Vec::new();
+            for _ in 0..1024 { buf.push(0); }
+            buf.truncate(rsm_convert_unified_full_viewing_key_string_to_unified_incoming_viewing_key_string(src_string.as_ptr(), src_string.len(), buf.as_ptr() as *mut u8, buf.len()));
+            let mut key: RSMIncomingViewingKey = std::mem::MaybeUninit::uninit().assume_init();
+            assert!(rsm_parse_incoming_viewing_key_from_string(buf.as_ptr(), buf.len(), &mut key as *mut RSMIncomingViewingKey));
+            assert_eq!(key, test_viewing_key());
+        }
     }
 
     #[test]
