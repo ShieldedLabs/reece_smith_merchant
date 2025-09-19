@@ -113,11 +113,14 @@ use zcash_primitives::transaction::{
     Transaction,
     TransactionData,
 };
-use zcash_protocol::consensus::{
-    BlockHeight,
-    BranchId,
-    MAIN_NETWORK,
-    Parameters,
+use zcash_protocol::{
+    consensus::{
+        BlockHeight,
+        BranchId,
+        MAIN_NETWORK,
+        Parameters,
+    },
+    value::COIN,
 };
 use sapling_crypto::note_encryption::{
     CompactOutputDescription,
@@ -325,7 +328,7 @@ pub enum MyEnum {
 
 #[unsafe(no_mangle)]
 /// Some documentation here
-pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: *const u8, merchant_name_str_len: usize, product_str: *const u8, product_str_len: usize, rsid: &[u8; 32]) -> bool {
+pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: *const u8, merchant_name_str_len: usize, product_str: *const u8, product_str_len: usize, rsid: &[u8; 32]) -> i32 {
     *buf = [0_u8; 512];
     let prefix1 = "RSID:";
 
@@ -343,13 +346,21 @@ pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: 
                 (c >= b'a' && c <= b'z') ||
                 c == b' ' || c == b'.'
             {}
-            else { return false; }
+            else { return -1; }
         }
     }
 
+    // println!("memo sizes:");
+    // println!("pre1: {}", prefix1.len());
+    // println!("bs64: {}", rsm_id_base64.len());
+    // println!("pre2: {}", prefix2.len());
+    // println!("nl:   1");
+    // println!("-------");
+    // println!("fixed used: {}", prefix1.len() + rsm_id_base64.len() + prefix2.len() + 1);
+
     if prefix1.len() + rsm_id_base64.len() + prefix2.len() + merchant_name_str_len + 1 + product_str_len <= 512 {
+        let mut o = 0;
         unsafe {
-            let mut o = 0;
             copy_nonoverlapping(prefix1.as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), prefix1.len());
             o += prefix1.len();
             copy_nonoverlapping(rsm_id_base64.as_ptr(), (*buf).as_mut_ptr().add(o), rsm_id_base64.len());
@@ -361,11 +372,122 @@ pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: 
             copy_nonoverlapping("\n".as_bytes().as_ptr(), (*buf).as_mut_ptr().add(o), 1);
             o += 1;
             copy_nonoverlapping(product_str, (*buf).as_mut_ptr().add(o), product_str_len);
+            o += product_str_len;
         }
-        true
+        o as i32
     } else {
-        false
+        -1
     }
+}
+
+fn write_val_to_buf_o(buf: *mut u8, o: usize, amount: u64) -> usize {
+    let mut val_buf = [0u8; 17];
+    let mut at_i = 17;
+    let zecs = amount / COIN;
+    let zats = amount % COIN;
+
+    if zats > 0 {
+        let mut rem_zats = zats;
+        let mut has_started = 0;
+
+        at_i -= 1; // we'll continually overwrite the first item in the buffer to avoid trailing 0s
+        for _ in 0..8 {
+            let digit_val = (rem_zats % 10) as u8;
+            rem_zats /= 10;
+            val_buf[at_i] = b'0' + digit_val;
+            has_started |= (digit_val != 0) as usize;
+            at_i -= has_started; // NOTE: this is unusual but allows branchless & we know there
+                                 // will be a subsequent '.' char
+        }
+
+        val_buf[at_i] = b'.';
+    }
+
+    let mut rem_zecs = zecs;
+    loop {
+        let digit_val = (rem_zecs % 10) as u8;
+        rem_zecs /= 10;
+        at_i -= 1;
+        val_buf[at_i] = b'0' + digit_val;
+
+        if rem_zecs == 0 {
+            break;
+        }
+    }
+
+    unsafe {
+        return copy_to_buf_o(&val_buf[at_i..], buf, o);
+    }
+}
+
+
+/// does no copy for null buf
+unsafe fn copy_to_buf_o(src: &[u8], buf: *mut u8, o: usize) -> usize {
+    if !buf.is_null() {
+        unsafe {
+            copy_nonoverlapping(src.as_ptr(), buf.add(o), src.len());
+        }
+    }
+    return src.len();
+}
+
+/// NOTE: assuming orchard addresses are a constant size & we don't want to include arbitrary
+/// unified addresses, we can give a fixed upper buf size that allows for a full memo & max
+/// possible zec
+///
+/// Returns negative number on failure
+/// Returns size. If buf is null, returns required size.
+///
+/// TODO(?): label + message options
+#[unsafe(no_mangle)]
+pub extern "C" fn url_from_memo_receipt_amount_addr(buf: *mut u8, memo: *const u8, memo_len: usize, amount: u64, addr: *const u8, addr_len: usize) -> i32 {
+    // "zcash:": 6 bytes
+    // orchard address: 106 bytes
+    // "?amount=": 8 bytes
+    // ("There MUST NOT be more than 8 digits in the decimal fraction" -- ZIP 321)
+    // max representable value: "21000000.00000000": 17 bytes
+    // "?memo=": 6 bytes
+    // max base64 memo: 683(?)
+    if memo_len > 512 {
+        return -1;
+    }
+
+    let mut o = 0;
+
+    let zcash_url = "zcash:";
+    let amount_arg = "?amount=";
+    let message_arg = "&message=";
+    let memo_arg = "&memo=";
+
+    // println!("max len: {}; {}", base64::encoded_len(512, false).unwrap(), (512 * 4 + 2) / 3);
+    // TODO: turn into mutable slice & edit that way?
+    unsafe {
+        o += copy_to_buf_o(zcash_url.as_bytes(), buf, o);
+        o += copy_to_buf_o(from_raw_parts(addr, addr_len), buf, o);
+
+        o += copy_to_buf_o(amount_arg.as_bytes(), buf, o);
+        o += write_val_to_buf_o(buf, o, amount);
+
+        o += copy_to_buf_o(memo_arg.as_bytes(), buf, o);
+        let mut b64_memo_buf = [0; 683];
+        let b64_memo_len = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode_slice(from_raw_parts(memo, memo_len), &mut b64_memo_buf).unwrap();
+        // println!("b64 memo len: {}", b64_memo_len);
+        o += copy_to_buf_o(&b64_memo_buf[..b64_memo_len], buf, o);
+
+        if false {
+            let vec = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&b64_memo_buf[..b64_memo_len]).unwrap();
+            let decoded = String::from_utf8_lossy(&vec);
+            println!("decoded:\n```\n{}\n```", decoded);
+            assert_eq!(vec, from_raw_parts(memo, memo_len));
+        }
+
+        if false {
+            o += copy_to_buf_o(message_arg.as_bytes(), buf, o);
+            o += copy_to_buf_o("hello".as_bytes(), buf, o);
+        }
+    }
+
+    return o as i32;
 }
 
 #[cfg(test)]
@@ -393,14 +515,19 @@ mod tests {
     #[test]
     fn it_works() {
         do_all_the_things();
-        let mut buf = [0_u8; 512];
+        let mut memo_buf = [0_u8; 512];
         let merchant_str = "Google Inc.";
         let product_str = "Thing1: 12.80 USD\n\
                            Another thing: 4.00 USD\n\
                            Subtotal: 16.80 USD";
         let rsid = [65_u8; 32];
-        memo_receipt_generate(&mut buf, merchant_str.as_ptr(), merchant_str.len(), product_str.as_ptr(), product_str.len(), &rsid);
-        println!("buf:\n```\n{}\n```", std::str::from_utf8(&buf).expect("valid UTF8"));
+        let memo_len = memo_receipt_generate(&mut memo_buf, merchant_str.as_ptr(), merchant_str.len(), product_str.as_ptr(), product_str.len(), &rsid);
+        println!("memo_buf:\n```\n{}\n```", std::str::from_utf8(&memo_buf).expect("valid UTF8"));
+
+        let mut url_buf = [0u8; 2056];
+        let addr = "u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f";
+        url_from_memo_receipt_amount_addr(url_buf.as_mut_ptr(), memo_buf.as_ptr(), memo_len as usize, 3*COIN/2, addr.as_bytes().as_ptr(), addr.len());
+        println!("url_buf:\n```\n{}\n```", std::str::from_utf8(&url_buf).expect("valid UTF8"));
     }
 
     #[test]
@@ -490,6 +617,29 @@ mod tests {
         let mut memo = [0_u8; 512];
         memo[0..str.len()].copy_from_slice(str.as_bytes());
         memo
+    }
+
+    #[test]
+    fn value_encoding() {
+        struct Test {
+            amount: u64,
+            string: &'static str,
+        };
+        let tests = [
+            Test { amount: 1 * COIN, string: "1" },
+            Test { amount: 1234 * COIN, string: "1234" },
+            Test { amount: COIN / 2, string: "0.5" },
+            Test { amount: 3 * COIN / 2, string: "1.5" },
+            Test { amount: 1,  string: "0.00000001" },
+            Test { amount: 10, string: "0.0000001" },
+        ];
+
+        for test in tests {
+            let mut buf = [0u8; 32];
+            let len = write_val_to_buf_o(buf.as_mut_ptr(), 0, test.amount);
+            assert!(len > 0);
+            assert_eq!(test.string, std::str::from_utf8(&buf[..len]).unwrap());
+        }
     }
 
     #[test]
