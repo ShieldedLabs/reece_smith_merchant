@@ -1,14 +1,34 @@
-typedef struct Blake3Hash {
-    uint8_t data[32];
-} Blake3Hash;
+typedef struct ConnectURIAndCertificateBlob {
+    const uint8_t *https_uri_string_ptr;
+    size_t https_uri_string_len;
+    const uint8_t *certificate_blob_ptr;
+    size_t certificate_blob_len;
+} ConnectURIAndCertificateBlob;
+
+typedef struct LightwalletdEndpointArray {
+    const struct ConnectURIAndCertificateBlob *ptr;
+    size_t len;
+} LightwalletdEndpointArray;
 
 typedef struct RSMIncomingViewingKey {
     IncomingViewingKey internal_orchard;
 } RSMIncomingViewingKey;
 
+typedef struct Blake3Hash {
+    uint8_t data[32];
+} Blake3Hash;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+size_t rsm_get_transactions_for_block_range(uint8_t *memory_buf,
+                                            size_t memory_buf_len,
+                                            struct LightwalletdEndpointArray uris,
+                                            struct RSMIncomingViewingKey viewing_key,
+                                            uint64_t lo_height,
+                                            uint64_t hi_height,
+                                            uint32_t on_fail);
 
 struct Blake3Hash create_rsid_from_merchant_and_tx(const uint8_t *merchant_name_str,
                                                    size_t merchant_name_str_len,

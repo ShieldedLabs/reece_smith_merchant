@@ -31,6 +31,23 @@ fn uhh<T, E: std::fmt::Debug> (result: Result<T, E>, on_fail: u32) -> Result<T, 
 
     result
 }
+fn uhh_option<T> (result: Option<T>, on_fail: u32) -> Option<T> {
+    if result.is_none() {
+        if on_fail & (uhh::LOG | uhh::PANIC) != 0 {
+            eprintln!("Option of '{}' was None.", type_name::<T>())
+        }
+
+        if on_fail & uhh::CALLSTACK != 0 {
+            todo!("print backtrace")
+        }
+
+        if on_fail & uhh::PANIC != 0 {
+            panic!("error marked as unrecoverable")
+        }
+    }
+
+    result
+}
 
 // NOTE: if you use u64::MAX, it will get treated as negative and then GetBlockRange will reverse &
 // go to the start of the chain!
@@ -46,7 +63,7 @@ pub struct ConnectURIAndCertificateBlob {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct LightwalletdEndpointArray {
     ptr: *const ConnectURIAndCertificateBlob,
     len: usize,
@@ -58,6 +75,72 @@ impl Into<&'static [ConnectURIAndCertificateBlob]> for LightwalletdEndpointArray
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn rsm_get_transactions_for_block_range(memory_buf: *mut u8, memory_buf_len: usize, uris: LightwalletdEndpointArray, viewing_key: RSMIncomingViewingKey, lo_height: u64, hi_height: u64, on_fail: u32) -> usize {
+    if memory_buf_len < 2 {
+        uhh_option::<[u8; 2]>(None, on_fail);
+        return 0;
+    }
+    let v: Option<Vec<CompactBlock>> = simple_get_compact_block_range(uris, lo_height, hi_height, on_fail);
+    if v.is_none() { return 0; }
+    let v = v.unwrap();
+
+    let uivk = viewing_key.to_uivk();
+    
+    let mut out_strings = Vec::new();
+
+    for block in v {
+        let compact_txs = filter_compact_txs_by_uivk(&Some(block.vtx), &uivk);
+        for compact_tx in &compact_txs {
+            let tx = uhh_option(simple_get_raw_transaction(uris, block.height, compact_tx.hash.clone(), on_fail), on_fail);
+            if tx.is_none() { return 0; }
+            let tx = tx.unwrap();
+            if &<[u8;32]>::from(tx.txid()) != compact_tx.hash.as_slice() {
+                uhh_option::<TxId>(None, on_fail);
+                return 0;
+            }
+            let v = uhh_option(read_tx_with_uivk(tx.into_data(), &uivk), on_fail);
+            if v.is_none() { return 0; }
+            let (value, memo) = v.unwrap();
+            
+            let mut memo_len = 0; while memo_len < 512 && memo[memo_len] != 0 { memo_len += 1; }
+            let addr = viewing_key.unified_address();
+            let size = url_from_memo_receipt_amount_addr(null_mut(), memo.as_ptr(), memo_len, value, addr.as_ptr(), addr.len());
+            let mut buf = vec![0_u8; size as usize];
+            assert_eq!(size, url_from_memo_receipt_amount_addr(buf.as_mut_ptr(), memo.as_ptr(), memo_len, value, addr.as_ptr(), addr.len()));
+            out_strings.push(buf);
+        }
+    }
+    if out_strings.len() == 0 {
+        // We want to return a single NOP string in order to allow the 0 return to indicate failure and rescan.
+        unsafe {
+            *memory_buf.byte_add(0) = 0;
+            *memory_buf.byte_add(1) = 0;
+            return 2;
+        }
+    }
+    let mut total_bytes = 0;
+    for os in &out_strings {
+        total_bytes += 2 + os.len();
+    }
+    if memory_buf_len < total_bytes {
+        uhh_option::<[u8; 3]>(None, on_fail);
+        return 0;
+    }
+    unsafe {
+        let mut put = memory_buf;
+        for os in &out_strings {
+            *(put as *mut u16) = os.len() as u16;
+            put = put.byte_add(2);
+            for b in os.as_slice() {
+                *put = *b;
+                put = put.byte_add(1);
+            }
+        }
+        return total_bytes;
+    }
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct Blake3Hash {
@@ -65,10 +148,7 @@ pub struct Blake3Hash {
 }
 
 use std::{
-    ffi::c_void,
-    ptr::copy_nonoverlapping,
-    ptr::slice_from_raw_parts,
-    slice::from_raw_parts,
+    any::type_name, ffi::c_void, ptr::{copy_nonoverlapping, null, null_mut, slice_from_raw_parts}, slice::from_raw_parts
 };
 
 #[unsafe(no_mangle)]
@@ -116,12 +196,9 @@ use zcash_primitives::transaction::{
 };
 use zcash_protocol::{
     consensus::{
-        BlockHeight,
-        BranchId,
-        MAIN_NETWORK,
-        Parameters,
+        BlockHeight, BranchId, Parameters, MAIN_NETWORK
     },
-    value::COIN,
+    value::COIN, TxId,
 };
 use sapling_crypto::note_encryption::{
     CompactOutputDescription,
@@ -146,10 +223,10 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
         for tx in txs {
             let tx_hash: &[u8] = &tx.hash;
             let tx_hash: Result<&[u8; 32],_> = tx_hash.try_into();
-            match tx_hash {
+            /*match tx_hash {
                 Ok(tx_hash) => println!("tx {:?}", tx_hash),
                 Err(err) => println!("tx not parsing (len {}): {:?}, {:?}", tx.hash.len(), tx.hash, err),
-            }
+            }*/
 
             let mut is_found = false;
 
@@ -180,11 +257,11 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
                         let orchard_domain = OrchardDomain::for_compact_action(&action);
                         // TODO: see if we can get memo
                         if let Some((_note, recipient)) = try_compact_note_decryption(&orchard_domain, orchard_ivk, &action) {
-                            if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
+                            /*if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
                                 println!("  unified orchard recipient for tx: {}", ua.encode(&MAIN_NETWORK));
                             } else {
                                 println!("  unified orchard recipient for tx not parsed: {:?}", recipient);
-                            }
+                            }*/
 
                             // filtered_txs.push(());
                             is_found = true;
@@ -214,14 +291,14 @@ pub fn read_tx_with_uivk(tx: TransactionData<zcash_primitives::transaction::Auth
         for action in bundle.actions() {
             let domain = OrchardDomain::for_action(action);
             if let Some((note, recipient, memo)) = try_note_decryption(&domain, ivk, action) {
-                if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
+                /*if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
                     println!("  unified orchard recipient for tx: {}", ua.encode(&MAIN_NETWORK));
                 } else {
                     println!("  unified orchard recipient for tx not parsed: {:?}", recipient);
-                }
+                }*/
 
                 let value = note.value().inner();
-                println!("Value: {} zats, Memo:\n---\n{}\n---\n", value, String::from_utf8_lossy(&memo));
+                //println!("Value: {} zats, Memo:\n---\n{}\n---\n", value, String::from_utf8_lossy(&memo));
                 if res.is_none() {
                     res = Some((value, memo));
                 }
@@ -624,9 +701,12 @@ mod tests {
 
     #[ignore]
     #[test]
-    fn fetch_mempool_contents_indefinitely() {
+    fn fetch_mempool_contents_indefinitely_demo() {
         loop {
-            fetch_mempool_contents();
+            let mempool_status = simple_get_mempool_tx(ZEC_ROCKS_EU, uhh::LOG);
+            println!("Try: {:?}", mempool_status);
+            let uivk = test_uivk();
+            filter_compact_txs_by_uivk(&mempool_status, &uivk);
         }
     }
 
@@ -718,6 +798,32 @@ mod tests {
             assert!(len > 0);
             assert_eq!(test.string, std::str::from_utf8(&buf[..len]).unwrap());
         }
+    }
+
+    #[test]
+    fn c_api_fetch_height_range() {
+        let mut arena = vec![0_u8; 4096];
+        arena.truncate(rsm_get_transactions_for_block_range(arena.as_ptr() as *mut u8, arena.len(), ZEC_ROCKS_EU, test_viewing_key(), 3051998, 3052065, uhh::PANIC));
+        let mut out_strings = Vec::new();
+        unsafe {
+            let mut cursor = 0;
+            while cursor < arena.len() {
+                let len = *(arena.as_ptr().byte_add(cursor) as *const u16);
+                cursor += 2;
+                let slice = slice_from_raw_parts(arena.as_ptr().byte_add(cursor), len as usize);
+                out_strings.push(String::from_utf8_lossy(&*slice));
+                cursor += len as usize;
+            }
+        }
+        for os in &out_strings {
+            println!("{}", os);
+        }
+    }
+
+    #[test]
+    fn c_api_fetch_height_range_returns_success_nothing_for_range_in_the_past() {
+        let mut arena = vec![0_u8; 4096];
+        assert_eq!(2, rsm_get_transactions_for_block_range(arena.as_ptr() as *mut u8, arena.len(), ZEC_ROCKS_EU, test_viewing_key(), 3021998, 3022065, uhh::PANIC));
     }
 
     #[test]
