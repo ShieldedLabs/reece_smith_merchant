@@ -193,7 +193,7 @@ use zcash_primitives::transaction::{
 };
 use zcash_protocol::{
     consensus::{
-        BlockHeight, BranchId, Parameters, MAIN_NETWORK
+        BlockHeight, BranchId, MAIN_NETWORK
     },
     value::COIN, TxId,
 };
@@ -202,11 +202,9 @@ use sapling_crypto::note_encryption::{
     SaplingDomain,
     Zip212Enforcement,
 };
-use orchard::{
-    note_encryption::{
-        CompactAction,
-        OrchardDomain,
-    }
+use orchard::note_encryption::{
+    CompactAction,
+    OrchardDomain,
 };
 
 pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIncomingViewingKey) -> Vec<CompactTx> {
@@ -505,7 +503,7 @@ pub extern "C" fn memo_receipt_generate(buf: &mut [u8; 512], merchant_name_str: 
     }
 }
 
-fn write_val_to_buf_o(buf: *mut u8, o: usize, amount: u64) -> usize {
+unsafe fn write_val_to_buf_o(buf: *mut u8, o: usize, amount: u64) -> usize {
     let mut val_buf = [0u8; 17];
     let mut at_i = 17;
     let zecs = amount / COIN;
@@ -804,7 +802,7 @@ mod tests {
 
         for test in tests {
             let mut buf = [0u8; 32];
-            let len = write_val_to_buf_o(buf.as_mut_ptr(), 0, test.amount);
+            let len = unsafe { write_val_to_buf_o(buf.as_mut_ptr(), 0, test.amount) };
             assert!(len > 0);
             assert_eq!(test.string, std::str::from_utf8(&buf[..len]).unwrap());
         }
