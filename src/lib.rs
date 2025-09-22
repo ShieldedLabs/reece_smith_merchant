@@ -51,6 +51,7 @@ fn uhh_option<T> (result: Option<T>, on_fail: u32) -> Option<T> {
 
 // NOTE: if you use u64::MAX, it will get treated as negative and then GetBlockRange will reverse &
 // go to the start of the chain!
+#[allow(dead_code)]
 const MAX_POSSIBLE_HEIGHT: u64 = i64::MAX as u64;
 
 #[repr(C)]
@@ -148,7 +149,7 @@ pub struct Blake3Hash {
 }
 
 use std::{
-    any::type_name, ffi::c_void, ptr::{copy_nonoverlapping, null, null_mut, slice_from_raw_parts}, slice::from_raw_parts
+    any::type_name, ffi::c_void, ptr::{copy_nonoverlapping, null_mut, slice_from_raw_parts}, slice::from_raw_parts
 };
 
 #[unsafe(no_mangle)]
@@ -163,10 +164,6 @@ pub extern "C" fn create_rsid_from_merchant_and_tx(merchant_name_str: *const u8,
     Blake3Hash { data }
 }
 
-use zcash_address::{
-    ToAddress,
-    ZcashAddress,
-};
 use zcash_client_backend::{
     address::UnifiedAddress,
     keys::{
@@ -221,12 +218,12 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
         let sapling_domain = SaplingDomain::new(Zip212Enforcement::On);
 
         for tx in txs {
-            let tx_hash: &[u8] = &tx.hash;
-            let tx_hash: Result<&[u8; 32],_> = tx_hash.try_into();
-            /*match tx_hash {
-                Ok(tx_hash) => println!("tx {:?}", tx_hash),
-                Err(err) => println!("tx not parsing (len {}): {:?}, {:?}", tx.hash.len(), tx.hash, err),
-            }*/
+            // let tx_hash: &[u8] = &tx.hash;
+            // let tx_hash: Result<&[u8; 32],_> = tx_hash.try_into();
+            // match tx_hash {
+            //     Ok(tx_hash) => println!("tx {:?}", tx_hash),
+            //     Err(err) => println!("tx not parsing (len {}): {:?}, {:?}", tx.hash.len(), tx.hash, err),
+            // }
 
             let mut is_found = false;
 
@@ -235,14 +232,14 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
                     for sapling_output in &tx.outputs {
                         // TODO: see if we can get memo
                         let Ok(output) = uhh(CompactOutputDescription::try_from(sapling_output), uhh::LOG) else { continue; };
-                        if let Some((_note, recipient)) = try_compact_note_decryption(&sapling_domain, sapling_ivk, &output) {
-                            match UnifiedAddress::from_receivers(None, Some(recipient), None) {
-                                Some(ua) => println!("  unified sapling recipient for tx: {}", ua.encode(&MAIN_NETWORK)),
-                                None     => println!("  unified sapling recipient for tx not parsed: {:?}", recipient),
-                            }
+                        if let Some((_note, _recipient)) = try_compact_note_decryption(&sapling_domain, sapling_ivk, &output) {
+                            // match UnifiedAddress::from_receivers(None, Some(recipient), None) {
+                            //     Some(ua) => println!("  unified sapling recipient for tx: {}", ua.encode(&MAIN_NETWORK)),
+                            //     None     => println!("  unified sapling recipient for tx not parsed: {:?}", recipient),
+                            // }
 
-                            let za = ZcashAddress::from_sapling(MAIN_NETWORK.network_type(), recipient.to_bytes());
-                            println!("  zcash   sapling recipient for tx: {}", za);
+                            // let za = ZcashAddress::from_sapling(MAIN_NETWORK.network_type(), recipient.to_bytes());
+                            // println!("  zcash   sapling recipient for tx: {}", za);
 
                             // filtered_txs.push(());
                             is_found = true;
@@ -256,12 +253,12 @@ pub fn filter_compact_txs_by_uivk(txs: &Option<Vec<CompactTx>>, uivk: &UnifiedIn
                         let Ok(action) = uhh(CompactAction::try_from(orchard_action), uhh::LOG) else { continue; };
                         let orchard_domain = OrchardDomain::for_compact_action(&action);
                         // TODO: see if we can get memo
-                        if let Some((_note, recipient)) = try_compact_note_decryption(&orchard_domain, orchard_ivk, &action) {
-                            /*if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
-                                println!("  unified orchard recipient for tx: {}", ua.encode(&MAIN_NETWORK));
-                            } else {
-                                println!("  unified orchard recipient for tx not parsed: {:?}", recipient);
-                            }*/
+                        if let Some((_note, _recipient)) = try_compact_note_decryption(&orchard_domain, orchard_ivk, &action) {
+                            // if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
+                            //     println!("  unified orchard recipient for tx: {}", ua.encode(&MAIN_NETWORK));
+                            // } else {
+                            //     println!("  unified orchard recipient for tx not parsed: {:?}", recipient);
+                            // }
 
                             // filtered_txs.push(());
                             is_found = true;
@@ -290,12 +287,12 @@ pub fn read_tx_with_uivk(tx: TransactionData<zcash_primitives::transaction::Auth
     if let (Some(ivk), Some(bundle)) = (&maybe_orchard_ivk, tx.orchard_bundle()) {
         for action in bundle.actions() {
             let domain = OrchardDomain::for_action(action);
-            if let Some((note, recipient, memo)) = try_note_decryption(&domain, ivk, action) {
-                /*if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
-                    println!("  unified orchard recipient for tx: {}", ua.encode(&MAIN_NETWORK));
-                } else {
-                    println!("  unified orchard recipient for tx not parsed: {:?}", recipient);
-                }*/
+            if let Some((note, _recipient, memo)) = try_note_decryption(&domain, ivk, action) {
+                // if let Some(ua) = UnifiedAddress::from_receivers(Some(recipient), None, None) {
+                //     println!("  unified orchard recipient for tx: {}", ua.encode(&MAIN_NETWORK));
+                // } else {
+                //     println!("  unified orchard recipient for tx not parsed: {:?}", recipient);
+                // }
 
                 let value = note.value().inner();
                 //println!("Value: {} zats, Memo:\n---\n{}\n---\n", value, String::from_utf8_lossy(&memo));
@@ -309,14 +306,14 @@ pub fn read_tx_with_uivk(tx: TransactionData<zcash_primitives::transaction::Auth
 
     if let (Some(ivk), Some(bundle)) = (&maybe_sapling_ivk, tx.sapling_bundle()) {
         for output in bundle.shielded_outputs() {
-            if let Some((note, recipient, memo)) = try_note_decryption(&sapling_domain, ivk, output) {
-                match UnifiedAddress::from_receivers(None, Some(recipient), None) {
-                    Some(ua) => println!("  unified sapling recipient for tx: {}", ua.encode(&MAIN_NETWORK)),
-                    None     => println!("  unified sapling recipient for tx not parsed: {:?}", recipient),
-                }
+            if let Some((note, _recipient, memo)) = try_note_decryption(&sapling_domain, ivk, output) {
+                // match UnifiedAddress::from_receivers(None, Some(recipient), None) {
+                //     Some(ua) => println!("  unified sapling recipient for tx: {}", ua.encode(&MAIN_NETWORK)),
+                //     None     => println!("  unified sapling recipient for tx not parsed: {:?}", recipient),
+                // }
 
-                let za = ZcashAddress::from_sapling(MAIN_NETWORK.network_type(), recipient.to_bytes());
-                println!("  zcash   sapling recipient for tx: {}", za);
+                // let za = ZcashAddress::from_sapling(MAIN_NETWORK.network_type(), recipient.to_bytes());
+                // println!("  zcash   sapling recipient for tx: {}", za);
 
                 let value = note.value().inner();
                 println!("Value: {} zats, Memo:\n---\n{}\n---\n", value, String::from_utf8_lossy(&memo));
@@ -379,7 +376,7 @@ pub fn do_all_the_things() {
     let https_uri = "https://eu.zec.rocks:443";
     let cert: &[u8] = include_bytes!("../eu.zec.rocks-leaf.der");
 
-    let mempool_status = simple_get_mempool_tx(LightwalletdEndpointArray {
+    let _mempool_status = simple_get_mempool_tx(LightwalletdEndpointArray {
         len: 1,
         ptr: &ConnectURIAndCertificateBlob {
             https_uri_string_ptr: https_uri.as_ptr(),
@@ -407,11 +404,11 @@ pub enum MyEnum {
 #[derive(PartialEq, Eq, Debug)]
 #[repr(C)]
 pub struct RSMIncomingViewingKey {
-    internal_orchard: orchard::keys::IncomingViewingKey,
+    internal_orchard: [u8; 64], // orchard::keys::IncomingViewingKey,
 }
 impl RSMIncomingViewingKey {
     fn to_uivk(&self) -> UnifiedIncomingViewingKey {
-        UnifiedIncomingViewingKey::new(None, Some(self.internal_orchard.clone()))
+        UnifiedIncomingViewingKey::new(None, Some(orchard::keys::IncomingViewingKey::from_bytes(&self.internal_orchard).expect("generated directly from valid key")))
     }
     fn unified_address(&self) -> String {
         self.to_uivk().address(DiversifierIndex::new(), UnifiedAddressRequest::AllAvailableKeys).unwrap().encode(&MAIN_NETWORK)
@@ -429,7 +426,7 @@ pub extern "C" fn rsm_parse_incoming_viewing_key_from_string(unified_incoming_vi
         let v = v.orchard().clone();
         if v.is_none() { return false; }
         let v = v.unwrap();
-        *key_out = RSMIncomingViewingKey { internal_orchard: v };
+        *key_out = RSMIncomingViewingKey { internal_orchard: v.to_bytes() };
 
         true
     }
@@ -641,12 +638,11 @@ mod tests {
     }
     #[allow(invalid_value)]
     fn test_viewing_key() -> RSMIncomingViewingKey {
-        unsafe {
-            let string = "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj".as_bytes();
-            let mut key: RSMIncomingViewingKey = std::mem::MaybeUninit::uninit().assume_init();
-            assert!(rsm_parse_incoming_viewing_key_from_string(string.as_ptr(), string.len(), &mut key as *mut RSMIncomingViewingKey));
-            key
-        }
+        let string = "uivk1u7ty6ntudngulxlxedkad44w7g6nydknyrdsaw0jkacy0z8k8qk37t4v39jpz2qe3y98q4vs0s05f4u2vfj5e9t6tk9w5r0a3p4smfendjhhm5au324yvd84vsqe664snjfzv9st8z4s8faza5ytzvte5s9zruwy8vf0ze0mhq7ldfl2js8u58k5l9rjlz89w987a9akhgvug3zaz55d5h0d6ndyt4udl2ncwnm30pl456frnkj".as_bytes();
+        // let mut key: RSMIncomingViewingKey = std::mem::MaybeUninit::uninit().assume_init();
+        let mut key = RSMIncomingViewingKey { internal_orchard: [0; 64] };
+        assert!(rsm_parse_incoming_viewing_key_from_string(string.as_ptr(), string.len(), &mut key as *mut RSMIncomingViewingKey));
+        key
     }
     #[test]
     fn print_unified_address_for_orchard_only_receiver_and_check_same() {
@@ -796,7 +792,7 @@ mod tests {
         struct Test {
             amount: u64,
             string: &'static str,
-        };
+        }
         let tests = [
             Test { amount: 1 * COIN, string: "1" },
             Test { amount: 1234 * COIN, string: "1234" },
@@ -817,7 +813,8 @@ mod tests {
     #[test]
     fn c_api_fetch_height_range() {
         let mut arena = vec![0_u8; 4096];
-        arena.truncate(rsm_get_transactions_for_block_range(arena.as_ptr() as *mut u8, arena.len(), ZEC_ROCKS_EU, test_viewing_key(), 3051998, 3052065, uhh::PANIC));
+        let size = rsm_get_transactions_for_block_range(arena.as_mut_ptr(), arena.len(), ZEC_ROCKS_EU, test_viewing_key(), 3051998, 3052065, uhh::PANIC);
+        arena.truncate(size);
         let mut out_strings = Vec::new();
         unsafe {
             let mut cursor = 0;
@@ -837,7 +834,7 @@ mod tests {
     #[test]
     fn c_api_fetch_height_range_returns_success_nothing_for_range_in_the_past() {
         let mut arena = vec![0_u8; 4096];
-        assert_eq!(2, rsm_get_transactions_for_block_range(arena.as_ptr() as *mut u8, arena.len(), ZEC_ROCKS_EU, test_viewing_key(), 3021998, 3022065, uhh::PANIC));
+        assert_eq!(2, rsm_get_transactions_for_block_range(arena.as_mut_ptr(), arena.len(), ZEC_ROCKS_EU, test_viewing_key(), 3021998, 3022065, uhh::PANIC));
     }
 
     #[test]

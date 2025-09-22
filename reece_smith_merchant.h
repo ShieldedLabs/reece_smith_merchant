@@ -11,7 +11,7 @@ typedef struct LightwalletdEndpointArray {
 } LightwalletdEndpointArray;
 
 typedef struct RSMIncomingViewingKey {
-    IncomingViewingKey internal_orchard;
+    uint8_t internal_orchard[64];
 } RSMIncomingViewingKey;
 
 typedef struct Blake3Hash {
