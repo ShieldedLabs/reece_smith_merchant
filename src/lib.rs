@@ -86,7 +86,7 @@ pub extern "C" fn rsm_get_transactions_for_block_range(memory_buf: *mut u8, memo
     let v = v.unwrap();
 
     let uivk = viewing_key.to_uivk();
-    
+
     let mut out_strings = Vec::new();
 
     for block in v {
@@ -102,7 +102,7 @@ pub extern "C" fn rsm_get_transactions_for_block_range(memory_buf: *mut u8, memo
             let v = uhh_option(read_tx_with_uivk(tx.into_data(), &uivk), on_fail);
             if v.is_none() { return 0; }
             let (value, memo) = v.unwrap();
-            
+
             let mut memo_len = 0; while memo_len < 512 && memo[memo_len] != 0 { memo_len += 1; }
             let addr = viewing_key.unified_address();
             let size = url_from_memo_receipt_amount_addr(null_mut(), memo.as_ptr(), memo_len, value, addr.as_ptr(), addr.len());
@@ -681,8 +681,22 @@ mod tests {
 
         let mut url_buf = [0u8; 2056];
         let addr = "u1k9jlaxnrlsy3ppd3ep9rwrxq597j4g2v0mmj9x4x593hghr09y5stp4wsqzaxchzwecjmjtx22tquuth87vnywfu8mgk9n8mkcgxcr4f";
-        url_from_memo_receipt_amount_addr(url_buf.as_mut_ptr(), memo_buf.as_ptr(), memo_len as usize, 3*COIN/2, addr.as_bytes().as_ptr(), addr.len());
+        let url_size = url_from_memo_receipt_amount_addr(url_buf.as_mut_ptr(), memo_buf.as_ptr(), memo_len as usize, 3*COIN/2, addr.as_bytes().as_ptr(), addr.len());
         println!("url_buf:\n```\n{}\n```", std::str::from_utf8(&url_buf).expect("valid UTF8"));
+
+        let err_correct_lvls = [
+            qrcode::EcLevel::L, // allows up to  7% wrong blocks
+            qrcode::EcLevel::M, // allows up to 15%
+            qrcode::EcLevel::Q, // allows up to 25%
+            qrcode::EcLevel::H, // allows up to 30%
+        ];
+        for ec_lvl in err_correct_lvls {
+            let qr = qrcode::QrCode::with_error_correction_level(&url_buf[..url_size as usize], ec_lvl).unwrap();
+            let qr_uni = qr.render::<qrcode::render::unicode::Dense1x2>().build();
+            println!("{:?}:\n{}", ec_lvl, qr_uni);
+            // let qr_str = qr.render().dark_color('#').build();
+            // println!("{:?}:\n{}", ec_lvl, qr_str);
+        }
     }
 
     #[test]

@@ -29,6 +29,7 @@ zcash_note_encryption = "0.4.1"
 zcash_address = "0.8.0"
 zcash_primitives = "0.23.0"
 zcash_keys = { version = "0.9.0", features = ["test-dependencies"] }
+qrcode = "0.14.1"
 
 [build-dependencies]
 cbindgen = "0.29.0"
